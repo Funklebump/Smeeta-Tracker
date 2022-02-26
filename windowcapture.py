@@ -27,7 +27,8 @@ class WindowCapture:
             self.hwnd = win32gui.FindWindow(None, self.window_name)
             if self.hwnd:
                 self.ui.window_capture_status_label.setText("Warframe window found!")
-            return None
+            else:
+                return None
         try:
             rect = win32gui.GetWindowRect(self.hwnd)
         except:

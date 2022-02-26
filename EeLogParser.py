@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import csv
 import re
+import json
 
 class EeLogParser:
     def __init__(self, max_proc_time, ui):
@@ -30,6 +31,7 @@ class EeLogParser:
         self.mission_time=0
         self.max_proc_time=max_proc_time
         self.first_scan=True
+        self.current_arbitration=""
 
         self.mission_state_found=False
         self.drone_spawns = 0
@@ -58,6 +60,9 @@ class EeLogParser:
         found_mission_end=False
         with open(self.ee_log_path) as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
+                if i ==0:
+                    # skip the first line since it can be in the process of being written to
+                    continue
                 time_stamp_str = line.split(" ")[0]
                 reg_res = self.time_regex.match(time_stamp_str)
                 if reg_res is None:
@@ -84,7 +89,6 @@ class EeLogParser:
                     #logging.info('Mission started at time: %s'%(dt))
                     event_list.append('Mission started at time: %s'%(dt))
                     self.mission_start_time = self.global_time + self.scan_log_time
-                    print(line)
                     break
                 elif 'Game [Info]: CommitInventoryChangesToDB' in line:
                     found_mission_end=True
@@ -105,6 +109,14 @@ class EeLogParser:
                     self.drone_spawns-=1
                     date_string = datetime.datetime.fromtimestamp(int(self.global_time+self.scan_log_time)).strftime('%Y-%m-%d %H:%M:%S')
                     event_list.append("Arbitration drone despawned: %s"%(date_string))
+                if not self.first_scan and "Script [Info]: Background.lua: EliteAlertMission at " in line:
+                    with open("solNodes.json") as f:
+                        map_info = json.load(f)
+                    if "SolNode" in line:
+                        node = (re.search(r'SolNode[\d]+', line)).group(0)
+                    else:
+                        node = (re.search(r'ClanNode[\d]+', line)).group(0)
+                    self.current_arbitration = "%s %s %s"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'])
                 i+=1
         event_list.reverse()
         for elem in event_list:
@@ -115,8 +127,22 @@ class EeLogParser:
             self.mission_time = self.latest_log_time-(self.mission_start_time-self.global_time)
         else:
             self.mission_time = self.mission_end_time-self.mission_start_time
+        if self.first_scan:
+            self.search_arbitration()
         self.first_scan=False
         return self.drone_spawns
+
+    def search_arbitration(self):
+        with open(self.ee_log_path) as log_file:
+            for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
+                if "Script [Info]: Background.lua: EliteAlertMission at " in line:
+                    with open("solNodes.json") as f:
+                        map_info = json.load(f)
+                    if "SolNode" in line:
+                        node = (re.search(r'SolNode[\d]+', line)).group(0)
+                    else:
+                        node = (re.search(r'ClanNode[\d]+', line)).group(0)
+                    self.current_arbitration = "%s %s %s"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'])
 
     def plot_logs(self):
         fig, axs = plt.subplots(2,2)
@@ -217,7 +243,7 @@ class EeLogParser:
             mission_t = int(mission_end_time-st)
             self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=mission_t)))
             if mission_t>0:
-                self.ui.drone_kpm_label.setText('%.2f'%(drone_count/(mission_t/60)))
+                self.ui.drone_kpm_label.setText('%.2f, %.2f'%(drone_count/(mission_t/60),drone_count/(mission_t/3600)))
                 self.ui.kpm_label.setText('%.2f'%(en_count/(mission_t/60)))
             if en_count>0:
                 self.ui.drone_rate_label.setText('%.2f%%'%(100*drone_count/(en_count-drone_count)))

@@ -354,8 +354,8 @@ class MainWindow(QWidget):
         while(self.keep_threads_alive):
             try:
                 eep.parse_file()
-            except:
-                print("Falied to read ee log")
+            except Exception as e:
+                print("Falied to read ee log: %s"%(str(e)))
             self.ui.drone_spawns_label.setText(str(eep.drone_spawns))
             self.ui.total_spawns_label.setText(str(eep.total_spawns))
             self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=int(eep.mission_time))))
@@ -369,10 +369,17 @@ class MainWindow(QWidget):
             if self.dialog is not None:
                 if eep.in_mission and eep.drone_spawns>0:
                     time_formatted = time.strftime('%H:%M:%S', time.localtime(eep.latest_log_time+eep.global_time))
-                    eep.status_text='Drone spawned %d seconds ago\n%d drones total\nLogs updated %s (%d seconds ago)'%(time.time()-eep.last_spawn_time,eep.drone_spawns, time_formatted, time.time()-(eep.latest_log_time+eep.global_time))
+                    #eep.status_text='Drone spawned %d seconds ago\n%d drones total\nLogs updated %s (%d seconds ago)'%(time.time()-eep.last_spawn_time,eep.drone_spawns, time_formatted, time.time()-(eep.latest_log_time+eep.global_time))
+                    disp_str=""
+                    if self.ui.dt1_checkbox.isChecked(): disp_str+="Total Drones: %d"%eep.drone_spawns
+                    if self.ui.dt2_checkbox.isChecked(): disp_str+="\nDrones Per Hour: %d"%(eep.drone_spawns/((eep.latest_log_time-(eep.mission_start_time-eep.global_time))/3600))
+                    if self.ui.dt5_checkbox.isChecked(): disp_str+="\nCurrent Arbitration: %s"%eep.current_arbitration
+                    if self.ui.dt3_checkbox.isChecked(): disp_str+="\nDrone spawned %d seconds ago"%(time.time()-eep.last_spawn_time,eep.drone_spawns)
+                    if self.ui.dt4_checkbox.isChecked(): disp_str+="\nLogs updated %s (%d seconds ago)"%(time_formatted, time.time()-(eep.latest_log_time+eep.global_time))
+                    eep.status_text=disp_str
                 else:
                     #print('not in mission')
-                    eep.status_text=''
+                    eep.status_text="Current Arbitration: %s"%eep.current_arbitration
                 self.dialog.set_arb_text(eep.status_text)
             time.sleep(1)
         print('EE log parse thread exit')
