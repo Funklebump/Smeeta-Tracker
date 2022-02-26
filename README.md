@@ -38,3 +38,4 @@ THIS DOES NOT WORK FOR CLIENTS. YOU HAVE TO BE HOSTING FOR THIS INFORMATION TO B
 
 This is just how the game works, nothing I can do to fix this.
 
+Thanks to https://github.com/WFCD/warframe-worldstate-data for solar node information file
