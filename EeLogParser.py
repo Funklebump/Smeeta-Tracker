@@ -176,8 +176,9 @@ class EeLogParser:
         axs[1][0].set_title('Drone spawns')
 
         axs[0][1].set_title('Normalized spawns')
-        axs[1][1].set_title('Drone Rate (drones per enemy)')
-        axs[1][1].set_ylabel('Percent')
+        #axs[1][1].set_title('Drone Rate (drones per enemy)')
+        axs[1][1].set_title('Drones Per Hour')
+        axs[1][1].set_ylabel('Drone Rate')
 
         enemy_spawn_times=[]
         enemy_spawn_count=[]
@@ -186,13 +187,18 @@ class EeLogParser:
         start_time=0
         en_count=0
         drone_count=0
+        line_count=0
+        latest_time=0
+        mission_end_time=0
         with open(self.ee_log_path) as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
                 if isfloat(line.split(" ")[0]):
                     t_val = float(line.split(" ")[0])
+                    if line_count==0:
+                        latest_time= t_val
+                        line_count+=1
                 if "GameRulesImpl::StartRound()" in line or 'Game [Info]: OnStateStarted, mission type' in line:
                     start_time=t_val
-                    print(start_time)
                     break
                 elif 'Game [Info]: CommitInventoryChangesToDB' in line:
                     mission_end_time = self.global_time + t_val
@@ -219,6 +225,7 @@ class EeLogParser:
             if len(drone_spawn_times)>0:
                 drone_rate=[]
                 j=0
+                '''
                 for i, elem in enumerate(enemy_spawn_count):
                     if enemy_spawn_times[i] > drone_spawn_times[j]:
                         j+=1
@@ -228,9 +235,14 @@ class EeLogParser:
                         drone_rate.append(100*drone_spawn_count[j]/(elem-drone_spawn_count[j]))
                     else:
                         drone_rate.append(0)
+                '''
+                for i, elem in enumerate(drone_spawn_count):
+                    drone_rate.append(drone_spawn_count[i]/(drone_spawn_times[i]/3600))
+
                 drone_rate=np.array(drone_rate)
-                axs[1][1].plot(enemy_spawn_times, drone_rate)
-                axs[1][1].set_ylim(0,20)
+                #axs[1][1].plot(enemy_spawn_times, drone_rate)
+                axs[1][1].plot(drone_spawn_times/60, drone_rate)
+                #axs[1][1].set_ylim(0,20)
                 axs[0][1].plot(drone_spawn_times/60, drone_spawn_count/np.max(drone_spawn_count), label='Drones', c='b')
 
             axs[0][1].plot(enemy_spawn_times/60, enemy_spawn_count/np.max(enemy_spawn_count), label='Enemies', c='r')
@@ -243,7 +255,6 @@ class EeLogParser:
             axs[1][0].set_xlabel('Time (min)')
             axs[0][1].set_xlabel('Time (min)')
             axs[1][1].set_xlabel('Time (min)')
-            print(len(drone_spawn_count))
 
             proc_data = get_proc_data()
             st = start_time+self.global_time
@@ -262,6 +273,8 @@ class EeLogParser:
 
             self.ui.drone_spawns_label.setText(str(drone_count))
             self.ui.total_spawns_label.setText(str(en_count))
+            if mission_end_time == 0:
+                mission_end_time = latest_time
             mission_t = int(mission_end_time-st)
             self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=mission_t)))
             if mission_t>0:

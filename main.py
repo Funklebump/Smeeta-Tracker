@@ -130,6 +130,9 @@ class MainWindow(QWidget):
         logging.basicConfig(format='[%(asctime)s] %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename='general.log', filemode='w', level=logging.DEBUG)
         logging.info('Program initialized')
 
+        if not os.path.isfile("solNodes.json"):
+            os.rename('base_solNodes.json','solNodes.json')
+
     def load_ui(self):
         loader = QUiLoader()
         path = os.fspath(Path(__file__).resolve().parent / "form.ui")
