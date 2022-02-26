@@ -53,8 +53,12 @@ class MainWindow(QWidget):
         if self.latest_version_json["version"] != self.current_version_json["version"]:
             self.ui.version_label.setText('''<a href='https://github.com/A-DYB/smeeta-tracker-2/releases'>Updates available!</a>''')
             self.ui.version_label.setOpenExternalLinks(True)
+            self.ui.update_button.setEnabled(True)
+            self.ui.update_button.show()
         else:
             self.ui.version_label.setText("Version:%s - No updates available"%self.current_version_json["version"])
+            self.ui.update_button.setEnabled(False)
+            self.ui.update_button.hide()
 
         self.keep_threads_alive = False
 
