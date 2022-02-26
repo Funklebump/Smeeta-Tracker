@@ -3,6 +3,24 @@ Track smeeta affinity procs with an overlay and sound notifications. Contains ad
 
 This application is fan made and not endorsed by Digital Extremes. This does nothing that is against TOS, but use your own judgement and use at your own risk.
 
+This program only works on Windows, and was only tested on Windows 10.
+
+# Installation
+- Option 1: Python
+
+  1. Download the project files. 
+  2. Make sure you have python installed
+  3. Run "py -m pip install -r requirements.txt" in command prompt inside the project's folder
+  4. Run the program
+
+
+- Option 2: Executable
+
+  If you have no idea what Option 1 means, you can just download the .exe file from: https://github.com/A-DYB/smeeta-tracker-2/releases 
+
+  If there are no releases, I have not released anything yet and you will have to wait :(.
+
+
 # Smeeta detector tips
 Although generally unnecessary, to improve accuracy you can change your UI colors for "Text" and "Buffs" to uncommon and highly saturated colors. The default text color is white, which is completely unsaturated and moreover fairly common in many tilesets. This is not ideal, but the app tries its best to compensate for this. This is the only supported unsaturated color since it is the default. The default buff icon color is a highly saturated blue, and the main issue is that blue is a common color for the sky. On some maps this will cause template matching to fail. You can disable template matching, but I do not recommend it. To do this, set the template matching scale in the settings tab to 0. A warning though, if you disable this it will only be able to detect procs based on their duration. Some warframe abilities can reach 120 seconds or more, causing false detection. The number of false detections may increase as well because the template matching acts as a filter. If you have buff abilities with very high duration it is best to leave template matching on. 
 
