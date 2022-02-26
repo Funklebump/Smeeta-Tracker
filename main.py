@@ -206,7 +206,13 @@ class MainWindow(QWidget):
             if next_expiry is not None:
                 next_expiry = self.scanner.get_next_expiry()-time.time()
                 remaining_chances = int((round(next_expiry,1)+6)/27)
-                self.dialog.set_text("\nActive: %d\nNext Expiry: %.1fs\nRemaining Chances: %d"%(self.scanner.get_procs_active(), next_expiry, remaining_chances))
+                active=self.scanner.get_procs_active()
+                self.dialog.set_text("\nActive: %d\nNext Expiry: %.1fs\nRemaining Chances: %d"%(active, next_expiry, remaining_chances))
+                # update main window labels
+                self.ui.active_label.setText("%d"%active)
+                self.ui.total_boost_label.setText("%d"%(2**active))
+                self.ui.next_expiry_label.setText("%d"%next_expiry)
+                self.ui.extra_proc_chances_label.setText("%d"%remaining_chances)
             else:
                 self.dialog.set_text("")
             if len(self.scanner.proc_expiry_queue)>0:
