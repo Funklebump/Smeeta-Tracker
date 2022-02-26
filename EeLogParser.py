@@ -97,6 +97,13 @@ class EeLogParser:
                     event_list.append('Not in mission')
                     self.mission_end_time = self.global_time + self.scan_log_time
                     self.in_mission=False
+                    with open("solNodes.json") as f:
+                        map_info = json.load(f)
+                    if self.drone_count > map_info[self.current_misison]["personal_best"]:
+                        map_info[self.current_misison]["personal_best_dph"] = self.drone_count
+                        with open('solNodes.json', 'w') as outfile:
+                            json.dump(map_info, outfile)
+
                 #find drone spawns
                 if "OnAgentCreated /Npc/CorpusEliteShieldDroneAgent" in line:
                     #drone_list.append(self.global_time+self.scan_log_time)
@@ -117,7 +124,12 @@ class EeLogParser:
                         node = (re.search(r'SolNode[\d]+', line)).group(0)
                     else:
                         node = (re.search(r'ClanNode[\d]+', line)).group(0)
-                    self.current_arbitration = "%s %s %s"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'])
+                    self.current_arbitration = "%s %s %s (PB: %d drones/hr)"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'],map_info[node]['personal_best_dph'])
+                if not self.first_scan and "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
+                    if "SolNode" in line:
+                        self.current_misison = (re.search(r'SolNode[\d]+', line)).group(0)
+                    else:
+                        self.current_misison = (re.search(r'ClanNode[\d]+', line)).group(0)
                 i+=1
         event_list.reverse()
         for elem in event_list:
@@ -145,6 +157,14 @@ class EeLogParser:
                         node = (re.search(r'ClanNode[\d]+', line)).group(0)
                     self.current_arbitration = "%s %s %s"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'])
                     break
+        # get most recent mission
+        with open(self.ee_log_path) as log_file:
+            for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
+                if not self.first_scan and "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
+                    if "SolNode" in line:
+                        self.current_misison = (re.search(r'SolNode[\d]+', line)).group(0)
+                    else:
+                        self.current_misison = (re.search(r'ClanNode[\d]+', line)).group(0)
 
     def plot_logs(self):
         fig, axs = plt.subplots(2,2)
