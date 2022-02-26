@@ -23,6 +23,7 @@ import cv2
 from matplotlib import pyplot as plt
 import logging
 import datetime
+import ctypes
 
 SMEETA_ICON_COLOR_TYPE = 69
 TEXT_COLOR_TYPE = 69+1
@@ -34,8 +35,8 @@ class MainWindow(QWidget):
         self.load_ui()
         self.dirname = os.path.dirname(os.path.abspath(__file__))
         self.clear = lambda: os.system('cls')
-        self.screencap = WindowCapture('Warframe', ( 1920 , 1080 ) )
-        #self.screencap = WindowCapture('Untitled - Paint', ( 1920 , 1080 ) )
+        user32 = ctypes.windll.user32
+        self.screencap = WindowCapture('Warframe', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
         self.screenshot = None
         self.screenshot_hsv = None
         self.color_event = TEXT_COLOR_TYPE
@@ -52,6 +53,8 @@ class MainWindow(QWidget):
         self.dialog = None
         self.scanner = None
         self.sounds = False
+
+        app.aboutToQuit.connect(self.closeEvent)
 
         self.ui.overlay_checkbox.stateChanged.connect(self.toggle_overlay)
         self.ui.sounds_checkbox.stateChanged.connect(self.toggle_sounds)
@@ -135,6 +138,9 @@ class MainWindow(QWidget):
 
         with open('config.json', 'w') as outfile:
             json.dump(data, outfile)
+
+    def closeEvent(self, arg):
+        sys.exit(0)
 
     def toggle_overlay(self):
         if self.ui.overlay_checkbox.isChecked():

@@ -40,9 +40,8 @@ class Scanner:
         self.M = cv2.getRotationMatrix2D((0,0), self.ui_rotation, 1)
 
         self.smeeta_proc_100_processed = cv2.imread(os.path.join(os.path.dirname(os.path.abspath(__file__)),'Templates\\smeeta_proc_100_processed.png'), 0 )
-        #self.smeeta_proc_100_processed = cv2.imread(os.path.join(os.path.dirname(os.path.abspath(__file__)),'Templates\\testp.png'), 0 )
 
-        self.wincap = WindowCapture('Warframe', ( 750 , 300 ) )
+        self.wincap = WindowCapture('Warframe', ( 750 , 300 ) , self.ui)
 
         if self.text_color == [0,0,255]:
             self.text_hsv_filter = self.white_hsv_filter
@@ -63,33 +62,14 @@ class Scanner:
         image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
         HSV_low = np.array([self.limit_color(color[0]-h_sens,179), self.limit_color(color[1]-s_sens), self.limit_color(color[2]*v_scale)], dtype=np.uint8)
         HSV_high = np.array([self.limit_color(color[0]+h_sens), self.limit_color(color[1]+1), self.limit_color(color[2]+40)], dtype=np.uint8)
-        #print(HSV_low)
-        #print(HSV_high)
         inverted = cv2.bitwise_not(cv2.inRange(image_hsv, HSV_low, HSV_high))
         return inverted
 
     def white_hsv_filter(self, image, color, h_sens=5, s_sens=40, v_scale=0.5):
         image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        #image_hls = cv2.cvtColor(image, cv2.COLOR_BGR2HLS)
-        #return self.hls_filter(image_hls, 100)
-
-        '''
-        HSV_low = np.array([0, 0, 150], dtype=np.uint8)
-        HSV_high = np.array([0, 26, 255], dtype=np.uint8)
-        inverted = cv2.inRange(image_hsv, HSV_low, HSV_high)
-
-        HSV_low = np.array([59, 0, 150], dtype=np.uint8)
-        HSV_high = np.array([60, 26, 255], dtype=np.uint8)
-        inverted = cv2.bitwise_or( inverted, cv2.inRange(image_hsv, HSV_low, HSV_high) )
-
-        HSV_low = np.array([86, 0, 150], dtype=np.uint8)
-        HSV_high = np.array([90, 26, 255], dtype=np.uint8)
-        inverted = cv2.bitwise_or( inverted, cv2.inRange(image_hsv, HSV_low, HSV_high) )
-        '''
         HSV_low = np.array([0, 0, 150], dtype=np.uint8)
         HSV_high = np.array([179, 26, 255], dtype=np.uint8)
         inverted = cv2.inRange(image_hsv, HSV_low, HSV_high)
-
         return cv2.bitwise_not(inverted)
 
     def limit_color(self, value, max_v=255):
@@ -133,10 +113,6 @@ class Scanner:
         smeeta_proc_100_processed = self.smeeta_proc_100_processed
         h,w = smeeta_proc_100_processed.shape
 
-        # 15 0.6
-        # icon
-        #filtered_scan = self.hsv_filter(screenshot, LBLUE_HSV, 40, 0.6)
-        #130
         filtered_scan = self.hsv_filter(screenshot, self.icon_color, h_sens=4, s_sens=60, v_scale=0.6)
         #filtered_scan = self.hsv_filter(screenshot, self.icon_color, h_sens=4, s_sens=150, v_scale=0.6)
         #filtered_scan = self.hsv_filter(screenshot, self.icon_color, h_sens=4, s_sens=180, v_scale=0.6)
@@ -144,18 +120,7 @@ class Scanner:
         match_result = cv2.matchTemplate(filtered_scan, smeeta_proc_100_processed, cv2.TM_CCOEFF_NORMED)
         #match_result = cv2.matchTemplate(~filtered_scan, ~smeeta_proc_100_processed, cv2.TM_CCORR_NORMED, mask=~self.smeeta_proc_100_processed)
 
-        '''
-        1. PERFORM NMS
-        2. GET 5 BEST MATCHES
-        find_num = 5
-        result   = cv.matchTemplate(img, templ, match_method)
-        idx_1d   = np.argpartition(result.flatten(), -find_num)[-find_num:]
-        idx_2d   = np.unravel_index(idx_1d, result.shape)
-        '''
-        #(yCoords, xCoords) = np.where( match_result >= self.template_match_threshold )
-        #print(match_result)
         (yCoords, xCoords) = np.where( (match_result > self.template_match_threshold) & (match_result <= 1) )
-        # initialize our list of rectangles
         rects = []
         probs=[]
         # loop over the starting (x, y)-coordinates again
@@ -164,26 +129,20 @@ class Scanner:
             rects.append((x, y, x + w, y + h))
             probs.append(match_result[y][x])
         res = non_max_suppression(np.array(rects), probs=probs)
-        #print(res)
         return res, w, h
-        #return list( zip(*(np.where( match_result >= self.template_match_threshold )[::-1])) ), w, h
 
     def scan_match_text(self):
-        print('yep')
         ui_screenshot = self.wincap.get_screenshot(36)
+        if ui_screenshot is None: return
+
         w, h, _ = ui_screenshot.shape
         screenshot_time = time.time()
 
-        # get mask using hls filter 50
-        #filtered_scan = self.hls_filter(ui_screenshot, 30)
-        # text
         filtered_scan = self.text_hsv_filter(ui_screenshot, self.text_color)
         # rotate screenshot to straighten text
         M = cv2.getRotationMatrix2D((w-1,0), self.ui_rotation, 1)
         rotated_filtered_scan = cv2.warpAffine(filtered_scan, M, (h, w), borderMode = cv2.BORDER_CONSTANT, borderValue =255)
         scaled_rotated_filtered_scan = cv2.resize(rotated_filtered_scan,None,  fx = 5, fy = 5, interpolation = cv2.INTER_LANCZOS4)
-        #blured = cv2.GaussianBlur(scaled_rotated_filtered_scan,(5,5),0)
-        #final = cv2.threshold(blured, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
 
         output = pytesseract.image_to_data(scaled_rotated_filtered_scan, lang='eng',config='-c tessedit_do_invert=0 -c tessedit_char_whitelist="0123456789x.%m " --psm 11', output_type=pytesseract.Output.DICT)
         for i in range(len(output['level'])):
@@ -203,19 +162,13 @@ class Scanner:
 
     def scan_match_template(self):
         ui_screenshot = self.wincap.get_screenshot(36)
+        if ui_screenshot is None: return
         w, h, _ = ui_screenshot.shape
         screenshot_time = time.time()
         ui_screenshot_copy = ui_screenshot.copy()
 
         # get locations of template matches
         locs, wt, ht = self.template_match(ui_screenshot)
-
-        '''
-        for (startX, startY, endX, endY) in locs:
-            cv2.rectangle(ui_screenshot_copy, (startX, startY), (endX, endY), (0, 0, 255), 2)
-        self.plot(ui_screenshot_copy)
-        cv2.waitKey(1)
-        '''
 
         stitched = None
         if len(locs) > 0:
@@ -224,44 +177,7 @@ class Scanner:
             filtered_scan = self.text_hsv_filter(ui_screenshot, self.text_color)
             rotated_filtered_scan = cv2.warpAffine(filtered_scan, self.M, (h, w), borderMode = cv2.BORDER_CONSTANT, borderValue =255)
 
-
             # convert points to rotated space
-            '''
-            DEPRECIATED
-            coords_list=[]
-            stitched = None
-            for i in range(len(locs)):
-                print('we her tho')
-                if stitched is not None:
-                    self.plot(stitched)
-                    cv2.waitKey(0)
-                xn,yn = locs[i][0],locs[i][1]
-
-                # fix stitched dimensions so they always matches
-                if len(coords_list) ==0 :
-                    rotated_coords= np.matmul( self.M[:,:-1],np.array([[xn],[yn]]) ).astype(int)
-                    xr,yr = *rotated_coords[0], *rotated_coords[1]
-                    coords_list.append( np.array([[xn],[yn]]).astype(int) )
-                    x1,y1,x2,y2 = (xr-10, yr+ht+3, xr+wt+10, yr+ht+25)
-                    #print(x1,y1,x2,y2)
-                    stitched = np.concatenate((stitched, rotated_filtered_scan[y1:y2,x1:x2]), axis=1) if stitched is not None else rotated_filtered_scan[y1:y2,x1:x2]
-                else:
-                    for elem in coords_list:
-                        xp,yp= elem[0],elem[1]
-                        if i==0 or ((xn-xp)**2+(yn-yp)**2)**0.5>10:
-                            rotated_coords= np.matmul( self.M[:,:-1],np.array([[xn],[yn]]) ).astype(int)
-                            xr,yr = *rotated_coords[0], *rotated_coords[1]
-                            coords_list.append( np.array([[xn],[yn]]).astype(int) )
-                            x1,y1,x2,y2 = (xr-10, yr+ht+3, xr+wt+10, yr+ht+25)
-                            #print(x1,y1,x2,y2)
-                            by = (abs(y2-y1)-np.shape(stitched)[0])
-                            if by > 0:
-                                img_with_border = rotated_filtered_scan[y1:y2-by,x1:x2]
-                            else:
-                                by = abs(by)
-                                img_with_border = cv2.copyMakeBorder(rotated_filtered_scan[y1:y2,x1:x2], by//2, by//2+(2*(by//2)-by), 0, 0, cv2.BORDER_CONSTANT, value=[255,255,255])
-                            stitched = np.concatenate((stitched, img_with_border), axis=1) if stitched is not None else rotated_filtered_scan[y1:y2,x1:x2]
-            '''
             for i in range(len(locs)):
                 xn,yn = locs[i][0],locs[i][1]
                 rotated_coords= np.matmul( self.M[:,:-1],np.array([[xn],[yn]]) ).astype(int)
@@ -287,7 +203,6 @@ class Scanner:
                     stitched = rotated_filtered_scan[y1:y2,x1:x2]
 
             if stitched is not None and stitched.shape[0]!=0 and stitched.shape[1]!=0:
-
                 # scale up stitched image
                 scaled_rotated_filtered_scan = cv2.resize(stitched, None,  fx = 5, fy = 5, interpolation = cv2.INTER_LANCZOS4)
 
@@ -302,14 +217,11 @@ class Scanner:
                     valid_width = True
 
                     if len(output['level'])>0 and output['text'][i] !='' and float(output['conf'][i]) > 0:
-                        #print("Time %.1f, Conf:%s"%(proc_time, output['conf'][i]))
                         if j < len(self.main_window.image_label_list):
-                            #self.ui.image_label.setText("%.1f, Conf:%s"%(proc_time, output['conf'][i]))
                             (xd, yd, wd, hd) = (output['left'][i], output['top'][i], output['width'][i], output['height'][i])
                             if wd>0 and hd>0:
                                 # create 3 channel image to display colored rectangle
                                 stacked_img = np.stack((blur,)*3, axis=-1)
-                                #cv2.resize(stacked_img, (21,51))
                                 cv2.rectangle(stacked_img, (xd, yd), (xd+wd, yd+hd), (0, 0, 255), 4)
                                 detection_image = get_bordered_image( stacked_img, xd, yd, xd+wd, yd+hd )
 
@@ -317,7 +229,6 @@ class Scanner:
                                 qt_img = self.convert_cv_qt(detection_image)
                                 # display it
                                 self.main_window.image_label_list[j].setPixmap(qt_img)
-                                #self.ui.image_label.setPixmap(qt_img)
                                 self.main_window.label_image_label_list[j].setText("%.1f, Conf: %s"%(proc_time, output['conf'][i]))
                                 j+=1
 
@@ -362,6 +273,7 @@ class Scanner:
 
     def show_icon_threshold(self):
         ui_screenshot = self.wincap.get_screenshot()
+        if ui_screenshot is None: return
         filtered_scan = self.hsv_filter(ui_screenshot, self.icon_color, h_sens=4, s_sens=60, v_scale=0.6)
         self.plot(filtered_scan)
         cv2.waitKey(0)
@@ -369,6 +281,7 @@ class Scanner:
 
     def show_text_threshold(self):
         ui_screenshot = self.wincap.get_screenshot()
+        if ui_screenshot is None: return
         filtered_scan = self.text_hsv_filter(ui_screenshot, self.text_color)
         self.plot(filtered_scan)
         cv2.waitKey(0)
