@@ -70,6 +70,8 @@ class MainWindow(QWidget):
 
         app.aboutToQuit.connect(self.closeEvent)
 
+        self.ui.update_button.clicked.connect(self.spawn_updater_and_die)
+
         self.ui.overlay_checkbox.stateChanged.connect(self.toggle_overlay)
         self.ui.sounds_checkbox.stateChanged.connect(self.toggle_sounds)
         self.ui.start_button.clicked.connect(self.start_scanning)
@@ -132,6 +134,22 @@ class MainWindow(QWidget):
 
         if not os.path.isfile("solNodes.json"):
             os.rename('base_solNodes.json','solNodes.json')
+
+    def spawn_updater_and_die(self, exit_code=0):
+        """
+        Start an external program and exit the script
+        with the specified return code.
+
+        Takes the parameter program, which is a list
+        that corresponds to the argv of your command.
+        """
+        self.keep_threads_alive=False
+        while len(self.thread_list)>0:
+            time.sleep(1)
+        # Start the external program
+        subprocess.Popen(['python', './updater.py'])
+        # We have started the program, and can suspend this interpreter
+        sys.exit(exit_code)
 
     def load_ui(self):
         loader = QUiLoader()
