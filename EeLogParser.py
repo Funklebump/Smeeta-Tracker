@@ -290,13 +290,13 @@ class EeLogParser:
 
     # spawn times epoch
     def get_expected_loot(self, spawn_times):
-        dcb,db,bdcb=1,1,1
+        drop_chance_booster,drop_booster,bless_booster=1,1,1
         if self.ui.drop_chance_booster_checkbox.isChecked():
-            dcb = 2
+            drop_chance_booster = 2
         if self.ui.drop_booster_checkbox.isChecked():
-            db = 2
+            drop_booster = 2
         if self.ui.bless_booster_checkbox.isChecked():
-            bdcb = 1.25
+            bless_booster = 1.25
         dsdcb = self.ui.dark_sector_booster_spinner.value()
 
         proc_data = get_proc_data()
@@ -310,7 +310,7 @@ class EeLogParser:
             for proc_time in valid_proc_data:
                 if spawn_time>proc_time and spawn_time<(proc_time+self.max_proc_time):
                     proc_hit_count+=1
-            loot += 2**proc_hit_count*dcb*db*bdcb*dsdcb*0.06
+            loot += 2**proc_hit_count * drop_chance_booster * drop_booster * bless_booster*dsdcb * 0.06
         return loot
 #1644367086.2767293
 def isfloat(value):
