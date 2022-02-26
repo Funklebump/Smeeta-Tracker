@@ -25,6 +25,7 @@ import logging
 import datetime
 import ctypes
 import requests
+import subprocess
 
 SMEETA_ICON_COLOR_TYPE = 42
 TEXT_COLOR_TYPE = 42+1
