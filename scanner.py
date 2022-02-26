@@ -288,7 +288,7 @@ class Scanner:
         cv2.destroyAllWindows()
 
     def append_proc_data(self, val):
-        with open('smeeta_history.csv','a') as fd:
+        with open('smeeta_history.csv','a+') as fd:
             fd.write('%s\n'%str(val))
 
     def convert_cv_qt(self, cv_img):
