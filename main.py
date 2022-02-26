@@ -24,9 +24,14 @@ from matplotlib import pyplot as plt
 import logging
 import datetime
 import ctypes
+import requests
 
 SMEETA_ICON_COLOR_TYPE = 69
 TEXT_COLOR_TYPE = 69+1
+version_link = "https://raw.github.com/A-DYB/smeeta-tracker-2/main/version.json"
+
+print( requests.get(version_link).text)
+y = json.loads(requests.get(version_link).text)
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -42,6 +47,15 @@ class MainWindow(QWidget):
         self.color_event = TEXT_COLOR_TYPE
         self.icon_color_hsv = [95, 255, 255]
         self.text_color_hsv = [0, 0, 255]
+
+        self.latest_version_json = json.loads(requests.get(version_link).text)
+        with open("version.json") as f:
+            self.current_version_json = json.load(f)
+        if self.latest_version_json["version"] != self.current_version_json["version"]:
+            self.ui.version_label.setText('''<a href='https://github.com/A-DYB/smeeta-tracker-2/releases'>Updates available!</a>''')
+            self.ui.version_label.setOpenExternalLinks(True)
+        else:
+            self.ui.version_label.setText("Version:%s - No updates available"%self.current_version_json["version"])
 
         self.keep_threads_alive = False
 
