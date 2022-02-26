@@ -30,9 +30,7 @@ import subprocess
 SMEETA_ICON_COLOR_TYPE = 42
 TEXT_COLOR_TYPE = 42+1
 version_link = "https://raw.github.com/A-DYB/smeeta-tracker-2/main/version.json"
-
-print( requests.get(version_link).text)
-y = json.loads(requests.get(version_link).text)
+# test updater
 
 class MainWindow(QWidget):
     def __init__(self):
