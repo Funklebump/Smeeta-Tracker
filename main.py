@@ -355,8 +355,9 @@ class MainWindow(QWidget):
     def scan_ee_logs(self):
         eep = EeLogParser(self.max_time, self.ui)
         while(self.keep_threads_alive):
+            eep.parse_file()
             try:
-                eep.parse_file()
+                pass
             except Exception as e:
                 print("Falied to read ee log: %s"%(str(e)))
             self.ui.drone_spawns_label.setText(str(eep.drone_spawns))

@@ -32,6 +32,7 @@ class EeLogParser:
         self.max_proc_time=max_proc_time
         self.first_scan=True
         self.current_arbitration=""
+        self.current_mission=""
 
         self.mission_state_found=False
         self.drone_spawns = 0
@@ -54,6 +55,8 @@ class EeLogParser:
                     break
 
     def parse_file(self):
+        if self.first_scan:
+            self.search_arbitration()
         i=-1
         drone_list=[]
         event_list=[]
@@ -99,8 +102,8 @@ class EeLogParser:
                     self.in_mission=False
                     with open("solNodes.json") as f:
                         map_info = json.load(f)
-                    if self.drone_count > map_info[self.current_misison]["personal_best"]:
-                        map_info[self.current_misison]["personal_best_dph"] = self.drone_count
+                    if self.drone_spawns > map_info[self.current_mission]["personal_best_dph"]:
+                        map_info[self.current_mission]["personal_best_dph"] = self.drone_spawns
                         with open('solNodes.json', 'w') as outfile:
                             json.dump(map_info, outfile)
 
@@ -127,9 +130,9 @@ class EeLogParser:
                     self.current_arbitration = "%s %s %s (PB: %d drones/hr)"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'],map_info[node]['personal_best_dph'])
                 if not self.first_scan and "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
                     if "SolNode" in line:
-                        self.current_misison = (re.search(r'SolNode[\d]+', line)).group(0)
+                        self.current_mission = (re.search(r'SolNode[\d]+', line)).group(0)
                     else:
-                        self.current_misison = (re.search(r'ClanNode[\d]+', line)).group(0)
+                        self.current_mission = (re.search(r'ClanNode[\d]+', line)).group(0)
                 i+=1
         event_list.reverse()
         for elem in event_list:
@@ -140,8 +143,6 @@ class EeLogParser:
             self.mission_time = self.latest_log_time-(self.mission_start_time-self.global_time)
         else:
             self.mission_time = self.mission_end_time-self.mission_start_time
-        if self.first_scan:
-            self.search_arbitration()
         self.first_scan=False
         return self.drone_spawns
 
@@ -155,16 +156,17 @@ class EeLogParser:
                         node = (re.search(r'SolNode[\d]+', line)).group(0)
                     else:
                         node = (re.search(r'ClanNode[\d]+', line)).group(0)
-                    self.current_arbitration = "%s %s %s"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'])
+                    self.current_arbitration = "%s %s %s (PB: %d drones/hr)"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'],map_info[node]['personal_best_dph'])
                     break
         # get most recent mission
         with open(self.ee_log_path) as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
-                if not self.first_scan and "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
+                if "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
                     if "SolNode" in line:
-                        self.current_misison = (re.search(r'SolNode[\d]+', line)).group(0)
+                        self.current_mission = (re.search(r'SolNode[\d]+', line)).group(0)
                     else:
-                        self.current_misison = (re.search(r'ClanNode[\d]+', line)).group(0)
+                        self.current_mission = (re.search(r'ClanNode[\d]+', line)).group(0)
+                    break
 
     def plot_logs(self):
         fig, axs = plt.subplots(2,2)
