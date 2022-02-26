@@ -26,8 +26,8 @@ import datetime
 import ctypes
 import requests
 
-SMEETA_ICON_COLOR_TYPE = 69
-TEXT_COLOR_TYPE = 69+1
+SMEETA_ICON_COLOR_TYPE = 42
+TEXT_COLOR_TYPE = 42+1
 version_link = "https://raw.github.com/A-DYB/smeeta-tracker-2/main/version.json"
 
 print( requests.get(version_link).text)
@@ -203,7 +203,7 @@ class MainWindow(QWidget):
             if next_expiry is not None:
                 next_expiry = self.scanner.get_next_expiry()-time.time()
                 remaining_chances = int((round(next_expiry,1)+6)/27)
-                self.dialog.set_text("Active: %d\nNext Expiry: %.1fs\nRemaining Chances: %d"%(self.scanner.get_procs_active(), next_expiry, remaining_chances))
+                self.dialog.set_text("\nActive: %d\nNext Expiry: %.1fs\nRemaining Chances: %d"%(self.scanner.get_procs_active(), next_expiry, remaining_chances))
             else:
                 self.dialog.set_text("")
             if len(self.scanner.proc_expiry_queue)>0:
@@ -371,14 +371,16 @@ class MainWindow(QWidget):
                     time_formatted = time.strftime('%H:%M:%S', time.localtime(eep.latest_log_time+eep.global_time))
                     #eep.status_text='Drone spawned %d seconds ago\n%d drones total\nLogs updated %s (%d seconds ago)'%(time.time()-eep.last_spawn_time,eep.drone_spawns, time_formatted, time.time()-(eep.latest_log_time+eep.global_time))
                     disp_str=""
-                    if self.ui.dt1_checkbox.isChecked(): disp_str+="Total Drones: %d"%eep.drone_spawns
+                    if self.ui.dt1_checkbox.isChecked(): disp_str+="\nTotal Drones: %d"%eep.drone_spawns
                     if self.ui.dt2_checkbox.isChecked(): disp_str+="\nDrones Per Hour: %d"%(eep.drone_spawns/((eep.latest_log_time-(eep.mission_start_time-eep.global_time))/3600))
-                    if self.ui.dt5_checkbox.isChecked(): disp_str+="\nCurrent Arbitration: %s"%eep.current_arbitration
                     if self.ui.dt3_checkbox.isChecked(): disp_str+="\nDrone spawned %d seconds ago"%(time.time()-eep.last_spawn_time,eep.drone_spawns)
                     if self.ui.dt4_checkbox.isChecked(): disp_str+="\nLogs updated %s (%d seconds ago)"%(time_formatted, time.time()-(eep.latest_log_time+eep.global_time))
+
+                    if self.ui.dt5_checkbox.isChecked(): disp_str+="\n\nCurrent Arbitration: %s"%eep.current_arbitration
+
                     eep.status_text=disp_str
                 else:
-                    #print('not in mission')
+                    #print(ee)
                     eep.status_text="Current Arbitration: %s"%eep.current_arbitration
                 self.dialog.set_arb_text(eep.status_text)
             time.sleep(1)

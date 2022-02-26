@@ -54,14 +54,15 @@ class EeLogParser:
                     break
 
     def parse_file(self):
-        i=0
+        i=-1
         drone_list=[]
         event_list=[]
         found_mission_end=False
         with open(self.ee_log_path) as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
-                if i ==0:
+                if i ==-1:
                     # skip the first line since it can be in the process of being written to
+                    i+=1
                     continue
                 time_stamp_str = line.split(" ")[0]
                 reg_res = self.time_regex.match(time_stamp_str)
@@ -143,6 +144,7 @@ class EeLogParser:
                     else:
                         node = (re.search(r'ClanNode[\d]+', line)).group(0)
                     self.current_arbitration = "%s %s %s"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'])
+                    break
 
     def plot_logs(self):
         fig, axs = plt.subplots(2,2)
