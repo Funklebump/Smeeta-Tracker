@@ -140,6 +140,7 @@ class MainWindow(QWidget):
             json.dump(data, outfile)
 
     def closeEvent(self, arg):
+        self.keep_threads_alive=False
         sys.exit(0)
 
     def toggle_overlay(self):
