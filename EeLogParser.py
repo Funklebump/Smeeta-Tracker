@@ -103,7 +103,7 @@ class EeLogParser:
                     with open("solNodes.json") as f:
                         map_info = json.load(f)
                     if self.drone_spawns > map_info[self.current_mission]["personal_best_dph"]:
-                        map_info[self.current_mission]["personal_best_dph"] = self.drone_spawns
+                        map_info[self.current_mission]["personal_best_dph"] = self.drone_spawns/((self.mission_end_time-self.mission_start_time)/3600)
                         with open('solNodes.json', 'w') as outfile:
                             json.dump(map_info, outfile)
 
