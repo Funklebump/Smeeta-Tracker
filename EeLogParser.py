@@ -15,6 +15,9 @@ import csv
 import re
 import json
 
+# solNodes
+# ['SolNode', 'ClanNode', 'SettlementNode', 'MercuryHUB', 'VenusHUB', 'EarthHUB', 'SaturnHUB', 'ErisHUB', 'EuropaHUB', 'PlutoHUB', 'TradeHUB', 'EventNode', 'PvpNode', '/Lotus/Types/Keys/SortieBossKeyPhorid', 'CrewBattleNode']
+
 class EeLogParser:
     def __init__(self, max_proc_time, ui):
         self.ui = ui
@@ -102,7 +105,7 @@ class EeLogParser:
                     self.in_mission=False
                     with open("solNodes.json") as f:
                         map_info = json.load(f)
-                    if self.drone_spawns > map_info[self.current_mission]["personal_best_dph"]:
+                    if self.current_mission != "" and self.drone_spawns > map_info[self.current_mission]["personal_best_dph"]:
                         map_info[self.current_mission]["personal_best_dph"] = self.drone_spawns/((self.mission_end_time-self.mission_start_time)/3600)
                         with open('solNodes.json', 'w') as outfile:
                             json.dump(map_info, outfile)
@@ -125,13 +128,13 @@ class EeLogParser:
                         map_info = json.load(f)
                     if "SolNode" in line:
                         node = (re.search(r'SolNode[\d]+', line)).group(0)
-                    else:
+                    elif "ClanNode" in line:
                         node = (re.search(r'ClanNode[\d]+', line)).group(0)
                     self.current_arbitration = "%s %s %s (PB: %d drones/hr)"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'],map_info[node]['personal_best_dph'])
                 if not self.first_scan and "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
                     if "SolNode" in line:
                         self.current_mission = (re.search(r'SolNode[\d]+', line)).group(0)
-                    else:
+                    elif "ClanNode" in line:
                         self.current_mission = (re.search(r'ClanNode[\d]+', line)).group(0)
                 i+=1
         event_list.reverse()
@@ -154,7 +157,7 @@ class EeLogParser:
                         map_info = json.load(f)
                     if "SolNode" in line:
                         node = (re.search(r'SolNode[\d]+', line)).group(0)
-                    else:
+                    elif "ClanNode" in line:
                         node = (re.search(r'ClanNode[\d]+', line)).group(0)
                     self.current_arbitration = "%s %s %s (PB: %d drones/hr)"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'],map_info[node]['personal_best_dph'])
                     break
@@ -164,7 +167,7 @@ class EeLogParser:
                 if "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
                     if "SolNode" in line:
                         self.current_mission = (re.search(r'SolNode[\d]+', line)).group(0)
-                    else:
+                    elif "ClanNode" in line:
                         self.current_mission = (re.search(r'ClanNode[\d]+', line)).group(0)
                     break
 
@@ -291,7 +294,11 @@ class EeLogParser:
             with open("solNodes.json") as f:
                 map_info = json.load(f)
             node = self.current_mission
-            plt.suptitle("%s - %s %s\nDrones: %d\nAverage VE: %d (%.1fx boost)"%(map_info[node]["value"],map_info[node]['enemy'],map_info[node]['type'], drone_count, loot, loot/(drone_count*0.06)))
+            if node != "":
+                mission_str = "%s - %s %s"%(map_info[node]["value"],map_info[node]['enemy'],map_info[node]['type'])
+            else:
+                mission_str = ""
+            plt.suptitle("%s\nDrones: %d\nAverage VE: %d (%.1fx boost)"%(mission_str, drone_count, loot, loot/(drone_count*0.06)))
 
             fig.tight_layout()
 
