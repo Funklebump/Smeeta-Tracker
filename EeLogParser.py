@@ -46,7 +46,7 @@ class EeLogParser:
         self.time_regex = re.compile('\d*[.]\d{3}')
 
     def sync_time(self):
-        with open(self.ee_log_path) as log_file:
+        with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
             for line in log_file:
                 #find time alignment
                 if "Sys [Diag]: Current time:" in line:
@@ -64,7 +64,7 @@ class EeLogParser:
         drone_list=[]
         event_list=[]
         found_mission_end=False
-        with open(self.ee_log_path) as log_file:
+        with open(self.ee_log_path, encoding="utf8", errors="ignore") as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
                 if i ==-1:
                     # skip the first line since it can be in the process of being written to
@@ -150,7 +150,7 @@ class EeLogParser:
         return self.drone_spawns
 
     def search_arbitration(self):
-        with open(self.ee_log_path) as log_file:
+        with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
                 if "Script [Info]: Background.lua: EliteAlertMission at " in line:
                     with open("solNodes.json") as f:
@@ -162,7 +162,7 @@ class EeLogParser:
                     self.current_arbitration = "%s %s %s (PB: %d drones/hr)"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'],map_info[node]['personal_best_dph'])
                     break
         # get most recent mission
-        with open(self.ee_log_path) as log_file:
+        with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
                 if "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
                     if "SolNode" in line:
@@ -195,7 +195,7 @@ class EeLogParser:
         line_count=0
         latest_time=0
         mission_end_time=0
-        with open(self.ee_log_path) as log_file:
+        with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
                 if isfloat(line.split(" ")[0]):
                     t_val = float(line.split(" ")[0])

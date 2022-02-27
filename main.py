@@ -385,7 +385,7 @@ class MainWindow(QWidget):
             try:
                 pass
             except Exception as e:
-                print("Falied to read ee log: %s"%(str(e)))
+                print("Failed to read ee log: %s"%(str(e)))
             self.ui.drone_spawns_label.setText(str(eep.drone_spawns))
             self.ui.total_spawns_label.setText(str(eep.total_spawns))
             self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=int(eep.mission_time))))
