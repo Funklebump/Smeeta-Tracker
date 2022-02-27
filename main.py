@@ -411,7 +411,8 @@ class MainWindow(QWidget):
                     eep.status_text=disp_str
                 else:
                     #print(ee)
-                    eep.status_text="Current Arbitration: %s"%eep.current_arbitration
+                    if not eep.in_mission: eep.status_text="Current Arbitration: %s"%eep.current_arbitration
+                    else: eep.status_text=""
                 self.dialog.set_arb_text(eep.status_text)
             time.sleep(1)
         print('EE log parse thread exit')
