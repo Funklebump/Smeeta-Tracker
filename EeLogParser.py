@@ -179,8 +179,8 @@ class EeLogParser:
 
         axs[0][1].set_title('Normalized spawns')
         #axs[1][1].set_title('Drone Rate (drones per enemy)')
-        axs[1][1].set_title('Drones Per Hour')
-        axs[1][1].set_ylabel('Drone Rate')
+        axs[1][1].set_title('Drone Rate')
+        axs[1][1].set_ylabel('Drones Per Hour')
 
         enemy_spawn_times=[]
         enemy_spawn_count=[]
@@ -267,7 +267,7 @@ class EeLogParser:
                     i+=1
             if i > 0: axs[1][0].legend()
 
-            fig.tight_layout()
+
             # get loot
             spawn_times = [f+st for f in drone_spawn_times]
             loot = self.get_expected_loot(spawn_times)
@@ -286,6 +286,15 @@ class EeLogParser:
                 self.ui.drone_rate_label.setText('%.2f%%'%(100*drone_count/(en_count-drone_count)))
             else: self.ui.drone_rate_label.setText('-')
 
+            # get last mission
+            self.search_arbitration()
+            with open("solNodes.json") as f:
+                map_info = json.load(f)
+            node = self.current_mission
+            plt.suptitle("%s - %s %s\nDrones: %d\nAverage VE: %d (%.1fx boost)"%(map_info[node]["value"],map_info[node]['enemy'],map_info[node]['type'], drone_count, loot, loot/(drone_count*0.06)))
+
+            fig.tight_layout()
+
             plt.show()
 
     # spawn times epoch
@@ -297,7 +306,7 @@ class EeLogParser:
             drop_booster = 2
         if self.ui.bless_booster_checkbox.isChecked():
             bless_booster = 1.25
-        dsdcb = self.ui.dark_sector_booster_spinner.value()
+        dark_sector_booster = self.ui.dark_sector_booster_spinner.value()
 
         proc_data = get_proc_data()
         valid_proc_data = [ f for f in proc_data if f>spawn_times[0] and f<spawn_times[-1] ]
@@ -310,7 +319,7 @@ class EeLogParser:
             for proc_time in valid_proc_data:
                 if spawn_time>proc_time and spawn_time<(proc_time+self.max_proc_time):
                     proc_hit_count+=1
-            loot += 2**proc_hit_count * drop_chance_booster * drop_booster * bless_booster*dsdcb * 0.06
+            loot += 2**proc_hit_count * drop_chance_booster * drop_booster * bless_booster * dark_sector_booster * 0.06
         return loot
 #1644367086.2767293
 def isfloat(value):
