@@ -11,8 +11,8 @@ This program only works on Windows, and was only tested on Windows 10.
 # Installation
 ## Option 1: Python
 1. Download the project files. (Or use git clone)
-2. Make sure you have python installed
-3. (Optional) Make sure you have git installed. This will make updates easy, all you have to do is push a button in the UI.
+2. Make sure you have python installed. https://www.python.org/downloads/
+3. (Optional) Make sure you have git installed. This will make updates easy, all you have to do is push a button in the UI. https://git-scm.com/downloads
 4. Run "py -m pip install -r requirements.txt" in command prompt inside the project's folder
 5. Run the program "main.py"
 
