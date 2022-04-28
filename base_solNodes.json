@@ -2158,8 +2158,9 @@
     "ClanNode4": {
         "value": "Sinai (Jupiter)",
         "enemy": "Infested",
-        "type": "Dark Sector Survival",
-        "personal_best_dph": 0
+        "type": "Dark Sector Defense",
+        "personal_best_dph": 0,
+        "boost":1.2
     },
     "ClanNode5": {
         "value": "Cameria (Jupiter)",

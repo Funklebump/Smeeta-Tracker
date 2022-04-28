@@ -39,7 +39,7 @@ class MainWindow(QWidget):
         self.dirname = os.path.dirname(os.path.abspath(__file__))
         self.clear = lambda: os.system('cls')
         user32 = ctypes.windll.user32
-        self.screencap = WindowCapture('Warframe', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
+        self.screencap = WindowCapture('Warframe 2022.03.20 - 17.36.03.07.mp4', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
         self.screenshot = None
         self.screenshot_hsv = None
         self.color_event = TEXT_COLOR_TYPE
