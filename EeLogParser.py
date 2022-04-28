@@ -21,6 +21,7 @@ import json
 class EeLogParser:
     def __init__(self, max_proc_time, ui):
         self.ui = ui
+        self.dirname = os.path.dirname(os.path.abspath(__file__))
         self.ee_log_path = os.path.join(shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA, None, 0), 'Warframe\ee.log')
         self.global_time = 0
         self.sync_time()
@@ -103,11 +104,11 @@ class EeLogParser:
                     event_list.append('Not in mission')
                     self.mission_end_time = self.global_time + self.scan_log_time
                     self.in_mission=False
-                    with open("solNodes.json") as f:
+                    with open(os.path.join(self.dirname,"solNodes.json")) as f:
                         map_info = json.load(f)
                     if self.current_mission != "" and self.drone_spawns > map_info[self.current_mission]["personal_best_dph"]:
                         map_info[self.current_mission]["personal_best_dph"] = self.drone_spawns/((self.mission_end_time-self.mission_start_time)/3600)
-                        with open('solNodes.json', 'w') as outfile:
+                        with open(os.path.join(self.dirname,'solNodes.json'), 'w') as outfile:
                             json.dump(map_info, outfile)
 
                 #find drone spawns
@@ -124,7 +125,7 @@ class EeLogParser:
                     date_string = datetime.datetime.fromtimestamp(int(self.global_time+self.scan_log_time)).strftime('%Y-%m-%d %H:%M:%S')
                     event_list.append("Arbitration drone despawned: %s"%(date_string))
                 if not self.first_scan and "Script [Info]: Background.lua: EliteAlertMission at " in line:
-                    with open("solNodes.json") as f:
+                    with open(os.path.join(self.dirname,"solNodes.json")) as f:
                         map_info = json.load(f)
                     if "SolNode" in line:
                         node = (re.search(r'SolNode[\d]+', line)).group(0)
@@ -153,7 +154,7 @@ class EeLogParser:
         with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
             for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
                 if "Script [Info]: Background.lua: EliteAlertMission at " in line:
-                    with open("solNodes.json") as f:
+                    with open(os.path.join(self.dirname,"solNodes.json")) as f:
                         map_info = json.load(f)
                     if "SolNode" in line:
                         node = (re.search(r'SolNode[\d]+', line)).group(0)
@@ -291,7 +292,7 @@ class EeLogParser:
 
             # get last mission
             self.search_arbitration()
-            with open("solNodes.json") as f:
+            with open(os.path.join(self.dirname,"solNodes.json")) as f:
                 map_info = json.load(f)
             node = self.current_mission
             if node != "":
@@ -337,7 +338,11 @@ def isfloat(value):
     return False
 
 def get_proc_data():
-    with open('smeeta_history.csv', newline='') as f:
+    data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'smeeta_history.csv')
+    if not os.path.isfile(data_path):
+        f = open(data_path, 'a+')
+        f.close()
+    with open(data_path, newline='') as f:
         reader = csv.reader(f)
         time_list= list(reader)
     return [float(val[0]) for val in time_list]

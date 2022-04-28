@@ -47,7 +47,7 @@ class MainWindow(QWidget):
         self.text_color_hsv = [0, 0, 255]
 
         self.latest_version_json = json.loads(requests.get(version_link).text)
-        with open("version.json") as f:
+        with open(os.path.join(self.dirname,"version.json")) as f:
             self.current_version_json = json.load(f)
         if self.latest_version_json["version"] != self.current_version_json["version"]:
             self.ui.version_label.setText('''<a href='https://github.com/A-DYB/smeeta-tracker-2/releases'>Updates available!</a>''')
@@ -134,8 +134,8 @@ class MainWindow(QWidget):
         logging.basicConfig(format='[%(asctime)s] %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', filename='general.log', filemode='w', level=logging.DEBUG)
         logging.info('Program initialized')
 
-        if not os.path.isfile("solNodes.json"):
-            os.rename('base_solNodes.json','solNodes.json')
+        if not os.path.isfile(os.path.join(self.dirname,"solNodes.json")):
+            os.rename(os.path.join(self.dirname,'base_solNodes.json'),os.path.join(self.dirname,'solNodes.json'))
 
     def spawn_updater_and_die(self, exit_code=0):
         """
@@ -162,18 +162,18 @@ class MainWindow(QWidget):
         ui_file.close()
 
     def load_config(self):
-        with open('config.json') as json_file:
+        with open(os.path.join(self.dirname,'config.json')) as json_file:
             data = json.load(json_file)
         self.icon_color_hsv = data['icon_color_hsv']
         self.text_color_hsv = data['text_color_hsv']
 
     def save_config(self):
-        with open('config.json') as json_file:
+        with open(os.path.join(self.dirname,'config.json')) as json_file:
             data = json.load(json_file)
         data['icon_color_hsv'] = self.icon_color_hsv
         data['text_color_hsv'] = self.text_color_hsv
 
-        with open('config.json', 'w') as outfile:
+        with open(os.path.join(self.dirname,'config.json'), 'w') as outfile:
             json.dump(data, outfile)
 
     def closeEvent(self, arg):
