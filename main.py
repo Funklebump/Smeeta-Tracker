@@ -39,12 +39,13 @@ class MainWindow(QWidget):
         self.dirname = os.path.dirname(os.path.abspath(__file__))
         self.clear = lambda: os.system('cls')
         user32 = ctypes.windll.user32
-        self.screencap = WindowCapture('Warframe 2022.03.20 - 17.36.03.07.mp4', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
+        self.screencap = WindowCapture('Warframe', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
         self.screenshot = None
         self.screenshot_hsv = None
         self.color_event = TEXT_COLOR_TYPE
         self.icon_color_hsv = [95, 255, 255]
         self.text_color_hsv = [0, 0, 255]
+        self.smeeta_time_reference = 0
 
         self.latest_version_json = json.loads(requests.get(version_link).text)
         with open(os.path.join(self.dirname,"version.json")) as f:
@@ -69,6 +70,7 @@ class MainWindow(QWidget):
         self.dialog = None
         self.scanner = None
         self.sounds = False
+        self.eep = None
 
         app.aboutToQuit.connect(self.closeEvent)
 
@@ -223,22 +225,24 @@ class MainWindow(QWidget):
         self.dialog_thread_active = True
         while(self.keep_threads_alive):
             next_expiry = self.scanner.get_next_expiry()
+            cur_time = time.time()
+            next_trial = 27-((cur_time-self.smeeta_time_reference)%27)
             if next_expiry is not None:
                 next_expiry = self.scanner.get_next_expiry()-time.time()
                 remaining_chances = int((round(next_expiry,1)+6)/27)
                 active=self.scanner.get_procs_active()
-                self.dialog.set_text("\nActive: %d\nNext Expiry: %.1fs\nRemaining Chances: %d"%(active, next_expiry, remaining_chances))
+                self.dialog.set_text("\nActive: %d\nNext Expiry: %.1fs\nRemaining Chances: %d\n%d"%(active, next_expiry, remaining_chances, next_trial))
                 # update main window labels
                 self.ui.active_label.setText("%d"%active)
                 self.ui.total_boost_label.setText("%d"%(2**active))
                 self.ui.next_expiry_label.setText("%d"%next_expiry)
                 self.ui.extra_proc_chances_label.setText("%d"%remaining_chances)
             else:
-                self.dialog.set_text("")
+                self.dialog.set_text("%d"%next_trial)
             if len(self.scanner.proc_expiry_queue)>0:
                 time.sleep((self.scanner.get_next_expiry()-time.time())%1)
             else:
-                time.sleep(2)
+                time.sleep((next_trial-cur_time)%1)
         print("Dialog thread exit")
         self.dialog_thread_active = False
         self.thread_list.pop()
@@ -379,40 +383,40 @@ class MainWindow(QWidget):
         self.save_config()
 
     def scan_ee_logs(self):
-        eep = EeLogParser(self.max_time, self.ui)
+        self.eep = EeLogParser(self.max_time, self)
         while(self.keep_threads_alive):
             try:
-                eep.parse_file()
+                self.eep.parse_file()
             except Exception as e:
                 print("Failed to read ee log: %s"%(str(e)))
-            self.ui.drone_spawns_label.setText(str(eep.drone_spawns))
-            self.ui.total_spawns_label.setText(str(eep.total_spawns))
-            self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=int(eep.mission_time))))
-            if eep.mission_time>0:
-                self.ui.drone_kpm_label.setText('%.2f, %.2f'%(eep.drone_spawns/(eep.mission_time/60), eep.drone_spawns/(eep.mission_time/3600)))
-                self.ui.kpm_label.setText('%.2f'%(eep.total_spawns/(eep.mission_time/60)))
-            if eep.total_spawns>0:
-                self.ui.drone_rate_label.setText('%.2f%%'%(100*eep.drone_spawns/(eep.total_spawns-eep.drone_spawns)))
+            self.ui.drone_spawns_label.setText(str(self.eep.drone_spawns))
+            self.ui.total_spawns_label.setText(str(self.eep.total_spawns))
+            self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=int(self.eep.mission_time))))
+            if self.eep.mission_time>0:
+                self.ui.drone_kpm_label.setText('%.2f, %.2f'%(self.eep.drone_spawns/(self.eep.mission_time/60), self.eep.drone_spawns/(self.eep.mission_time/3600)))
+                self.ui.kpm_label.setText('%.2f'%(self.eep.total_spawns/(self.eep.mission_time/60)))
+            if self.eep.total_spawns>0:
+                self.ui.drone_rate_label.setText('%.2f%%'%(100*self.eep.drone_spawns/(self.eep.total_spawns-self.eep.drone_spawns)))
             else: self.ui.drone_rate_label.setText('-')
             # update dialog
             if self.dialog is not None:
-                if eep.in_mission and eep.drone_spawns>0:
-                    time_formatted = time.strftime('%H:%M:%S', time.localtime(eep.latest_log_time+eep.global_time))
+                if self.eep.in_mission and self.eep.drone_spawns>0:
+                    time_formatted = time.strftime('%H:%M:%S', time.localtime(self.eep.latest_log_time+self.eep.global_time))
                     #eep.status_text='Drone spawned %d seconds ago\n%d drones total\nLogs updated %s (%d seconds ago)'%(time.time()-eep.last_spawn_time,eep.drone_spawns, time_formatted, time.time()-(eep.latest_log_time+eep.global_time))
                     disp_str=""
-                    if self.ui.dt1_checkbox.isChecked(): disp_str+="\nTotal Drones: %d"%eep.drone_spawns
-                    if self.ui.dt2_checkbox.isChecked(): disp_str+="\nDrones Per Hour: %d"%(eep.drone_spawns/((eep.latest_log_time-(eep.mission_start_time-eep.global_time))/3600))
-                    if self.ui.dt3_checkbox.isChecked(): disp_str+="\nDrone spawned %d seconds ago"%(time.time()-eep.last_spawn_time,eep.drone_spawns)
-                    if self.ui.dt4_checkbox.isChecked(): disp_str+="\nLogs updated %s (%d seconds ago)"%(time_formatted, time.time()-(eep.latest_log_time+eep.global_time))
+                    if self.ui.dt1_checkbox.isChecked(): disp_str+="\nTotal Drones: %d"%self.eep.drone_spawns
+                    if self.ui.dt2_checkbox.isChecked(): disp_str+="\nDrones Per Hour: %d"%(self.eep.drone_spawns/((self.eep.latest_log_time-(self.eep.mission_start_time-self.eep.global_time))/3600))
+                    if self.ui.dt3_checkbox.isChecked(): disp_str+="\nDrone spawned %d seconds ago"%(time.time()-self.eep.last_spawn_time,self.eep.drone_spawns)
+                    if self.ui.dt4_checkbox.isChecked(): disp_str+="\nLogs updated %s (%d seconds ago)"%(time_formatted, time.time()-(self.eep.latest_log_time+self.eep.global_time))
 
-                    if self.ui.dt5_checkbox.isChecked(): disp_str+="\n\nCurrent Arbitration: %s"%eep.current_arbitration
+                    if self.ui.dt5_checkbox.isChecked(): disp_str+="\n\nCurrent Arbitration: %s"%self.eep.current_arbitration
 
-                    eep.status_text=disp_str
+                    self.eep.status_text=disp_str
                 else:
                     #print(ee)
-                    if not eep.in_mission: eep.status_text="Current Arbitration: %s"%eep.current_arbitration
-                    else: eep.status_text=""
-                self.dialog.set_arb_text(eep.status_text)
+                    if not self.eep.in_mission: self.eep.status_text="Current Arbitration: %s"%self.eep.current_arbitration
+                    else: self.eep.status_text=""
+                self.dialog.set_arb_text(self.eep.status_text)
             time.sleep(1)
         print('EE log parse thread exit')
         self.thread_list.pop()

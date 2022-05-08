@@ -49,7 +49,7 @@ class Scanner:
             self.text_hsv_filter = self.hsv_filter
 
         self.procs_active = 0
-        self.proc_expiry_queue = deque([])
+        self.proc_expiry_queue = deque([]) 
         self.proc_warn_queue = deque([])
 
         self.sound_queue = deque([])
@@ -159,6 +159,7 @@ class Scanner:
                 self.proc_expiry_queue.append( proc_time + screenshot_time )
                 self.proc_warn_queue.append(1)
                 self.sound_queue.append('procs_active_%d.mp3'%self.procs_active)
+                self.main_window.smeeta_time_reference = screenshot_time-(self.max_time-proc_time)
 
     def scan_match_template(self):
         ui_screenshot = self.wincap.get_screenshot(36)
@@ -244,6 +245,7 @@ class Scanner:
                         date_string = datetime.datetime.fromtimestamp(int(screenshot_time-(self.max_time-proc_time))).strftime('%Y-%m-%d %H:%M:%S')
                         logging.info('Affinity proc detected at time: %s (%d). %d procs active'%(date_string, int(screenshot_time-(self.max_time-proc_time)), self.procs_active))
                         self.append_proc_data( screenshot_time-(self.max_time-proc_time) )
+                        self.main_window.smeeta_time_reference = screenshot_time-(self.max_time-proc_time)
                 for remain in range(j, len(self.main_window.image_label_list)):
                     self.main_window.image_label_list[remain].clear()
                     self.main_window.label_image_label_list[remain].setText("")

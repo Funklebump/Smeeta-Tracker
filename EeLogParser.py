@@ -19,8 +19,9 @@ import json
 # ['SolNode', 'ClanNode', 'SettlementNode', 'MercuryHUB', 'VenusHUB', 'EarthHUB', 'SaturnHUB', 'ErisHUB', 'EuropaHUB', 'PlutoHUB', 'TradeHUB', 'EventNode', 'PvpNode', '/Lotus/Types/Keys/SortieBossKeyPhorid', 'CrewBattleNode']
 
 class EeLogParser:
-    def __init__(self, max_proc_time, ui):
-        self.ui = ui
+    def __init__(self, max_proc_time, main_window):
+        self.main_window = main_window
+        self.ui = main_window.ui
         self.dirname = os.path.dirname(os.path.abspath(__file__))
         self.ee_log_path = os.path.join(shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA, None, 0), 'Warframe\ee.log')
         self.global_time = 0
@@ -97,6 +98,7 @@ class EeLogParser:
                     #logging.info('Mission started at time: %s'%(dt))
                     event_list.append('Mission started at time: %s'%(dt))
                     self.mission_start_time = self.global_time + self.scan_log_time
+                    self.main_window.smeeta_time_reference = self.mission_start_time
                     break
                 elif 'Game [Info]: CommitInventoryChangesToDB' in line:
                     found_mission_end=True
