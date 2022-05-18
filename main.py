@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import json
+from venv import create
 
 from win32gui import GetWindowText, GetForegroundWindow
 
@@ -83,8 +84,10 @@ class MainWindow(QWidget):
 
         self.ui.test_text_threshold_button.clicked.connect(self.show_text_threshold)
         self.ui.test_icon_threshold_button.clicked.connect(self.show_icon_threshold)
+        self.ui.test_bounds_button.clicked.connect(self.show_screencap)
         self.ui.reset_text_color_default_button.clicked.connect(self.reset_text_colors)
         self.ui.reset_icon_color_default_button.clicked.connect(self.reset_icon_colors)
+        self.ui.ui_scale_combo.currentIndexChanged.connect(self.save_config)
 
         #self.ui.icon_color_button.clicked.connect(self.choose_icon_color)
         #self.ui.text_color_button.clicked.connect(self.choose_text_color)
@@ -110,7 +113,7 @@ class MainWindow(QWidget):
         self.ui_elements = [self.ui.start_button,
         self.ui.overlay_checkbox,
         self.ui.sounds_checkbox,
-        self.ui.ui_scale_spinner,
+        self.ui.ui_scale_combo,
         self.ui.enable_affinity_scanner_checkbox,
         self.ui.track_arbitration_drone_checkbox,
         self.ui.icon_color_button,
@@ -118,10 +121,10 @@ class MainWindow(QWidget):
         self.ui.reset_icon_color_default_button,
         self.ui.reset_text_color_default_button,
         self.ui.label_5,
-        self.ui.ui_scale_spinner,
         self.ui.label_6,
         self.ui.time_120_radio_button,
         self.ui.time_156_radio_button,
+        self.ui.test_bounds_button,
         ]
 
         # border: " + BorderThickness + " solid " +hexColorCode + ";"
@@ -164,19 +167,34 @@ class MainWindow(QWidget):
         ui_file.close()
 
     def load_config(self):
+        self.create_config()
         with open(os.path.join(self.dirname,'config.json')) as json_file:
             data = json.load(json_file)
         self.icon_color_hsv = data['icon_color_hsv']
         self.text_color_hsv = data['text_color_hsv']
 
+        index = self.ui.ui_scale_combo.findText('%.1f'%(data['in_game_hud_scale']), QtCore.Qt.MatchFixedString)
+        if index >= 0:
+            self.ui.ui_scale_combo.setCurrentIndex(index)
+        
+
     def save_config(self):
+        self.create_config()
+
         with open(os.path.join(self.dirname,'config.json')) as json_file:
             data = json.load(json_file)
         data['icon_color_hsv'] = self.icon_color_hsv
         data['text_color_hsv'] = self.text_color_hsv
+        data["in_game_hud_scale"] = float(self.ui.ui_scale_combo.currentText())
 
         with open(os.path.join(self.dirname,'config.json'), 'w') as outfile:
             json.dump(data, outfile)
+    
+    def create_config(self):
+        if not os.path.isfile(os.path.join(self.dirname,'config.json')):
+            data = {"icon_color_hsv": [95, 255, 255], "text_color_hsv": [0, 0, 255], "in_game_hud_scale": 1}
+            with open('data.json', 'w') as f:
+                json.dump(data, f)
 
     def closeEvent(self, arg):
         self.keep_threads_alive=False
@@ -372,6 +390,9 @@ class MainWindow(QWidget):
     def show_text_threshold(self):
         self.scanner = Scanner(self)
         self.scanner.show_text_threshold()
+    def show_screencap(self):
+        self.scanner = Scanner(self)
+        self.scanner.show_screencap()
 
     def reset_text_colors(self):
         self.text_color_hsv = [0, 0, 255]
@@ -433,9 +454,9 @@ class MainWindow(QWidget):
 
     def update_template_match_condition(self):
         if self.scanner:
-            self.scanner.template_match_threshold = self.ui.template_match_slider.value()*0.6/100
+            self.scanner.template_match_threshold = self.ui.template_match_slider.value()/100
             self.scanner.template_matching_enabled = False if self.scanner.template_match_threshold == 0 else True
-        self.ui.template_match_label.setText("%d%%"%(self.ui.template_match_slider.value()*0.6))
+        self.ui.template_match_label.setText("%d%%"%(self.ui.template_match_slider.value()))
 
     def update_rgb_to_hsv_label(self):
         r = self.ui.r_spinner.value()/255

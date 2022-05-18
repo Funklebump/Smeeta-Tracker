@@ -14,34 +14,36 @@ from PySide6 import QtCore
 import pytesseract
 import cv2
 import numpy as np
-from playsound import playsound
-from lz.reversal import reverse
-from win32com.shell import shell, shellcon
 import logging
 import datetime
-import math
+import scipy.signal
 
 class Scanner:
     def __init__(self, main_window):
         self.main_window=main_window
         self.ui = main_window.ui
-        self.ui_scale = self.ui.ui_scale_spinner.value()
+        self.ui_scale = float(self.ui.ui_scale_combo.currentText())
         self.ui_rotation = -3.65/self.ui_scale
         self.scan_scale = 5/self.ui_scale
         pytesseract.pytesseract.tesseract_cmd = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Tesseract-OCR\\tesseract.exe')
         self.text_color = main_window.text_color_hsv
         self.icon_color = main_window.icon_color_hsv
         self.max_time = 120 if self.ui.time_120_radio_button.isChecked() else 156
-        self.template_match_threshold = self.ui.template_match_slider.value()*0.6/100
+        self.template_match_threshold = self.ui.template_match_slider.value()/100
         self.template_matching_enabled = False if self.template_match_threshold == 0 else True
 
         self.figure, self.axis = None,None
 
         self.M = cv2.getRotationMatrix2D((0,0), self.ui_rotation, 1)
 
-        self.smeeta_proc_100_processed = cv2.imread(os.path.join(os.path.dirname(os.path.abspath(__file__)),'Templates\\smeeta_proc_100_processed.png'), 0 )
+        self.smeeta_proc_100_processed = cv2.imread(os.path.join(os.path.dirname(os.path.abspath(__file__)),'Templates\\%dp.png'%(int(self.ui_scale*100))), 0 )
 
-        self.wincap = WindowCapture('Warframe', ( 750 , 300 ) , self.ui)
+        self.resolution_width = 1080
+        self.resolution_height = 1920
+        #self.width_scale = self.resolution_width/1080
+        #self.height_scale = self.resolution_height/1920
+
+        self.wincap = WindowCapture('Warframe', ( int(750*(1+(self.ui_scale-1)*0.5)) , int(300*(1+(self.ui_scale-1)*0.5)) ) , self.ui)
 
         if self.text_color == [0,0,255]:
             self.text_hsv_filter = self.white_hsv_filter
@@ -56,6 +58,7 @@ class Scanner:
 
         self.disply_width = 300
         self.display_height = 50
+        
 
     # Hue range is [0,179], Saturation range is [0,255] and Value range is [0,255].
     def hsv_filter(self, image, color, h_sens=5, s_sens=40, v_scale=0.3):
@@ -101,6 +104,9 @@ class Scanner:
         else:
             cv2.imshow('Computer Vision', img)
 
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
     def plot_lib(self, img):
         if self.axis is None:
             self.figure, self.axis = plt.subplots()
@@ -109,27 +115,50 @@ class Scanner:
             self.axis.imshow(img)
         plt.show()
 
+    def get_search_areas(self, img_inv):
+        result = cv2.bitwise_not(img_inv.copy())
+        contours = cv2.findContours(result, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours = contours[0] if len(contours) == 2 else contours[1]
+        contour_list = []
+        for cntr in contours:
+            x,y,w,h = cv2.boundingRect(cntr)
+            contour_list.append((x,y,w,h))
+        return contour_list
+
     def template_match(self, screenshot):
         smeeta_proc_100_processed = self.smeeta_proc_100_processed
         h,w = smeeta_proc_100_processed.shape
 
         filtered_scan = self.hsv_filter(screenshot, self.icon_color, h_sens=4, s_sens=60, v_scale=0.6)
-        #filtered_scan = self.hsv_filter(screenshot, self.icon_color, h_sens=4, s_sens=150, v_scale=0.6)
-        #filtered_scan = self.hsv_filter(screenshot, self.icon_color, h_sens=4, s_sens=180, v_scale=0.6)
+        match_result = np.zeros_like(filtered_scan).astype(np.float32)
+        
+        areas = self.get_search_areas(filtered_scan)
 
-        match_result = cv2.matchTemplate(filtered_scan, smeeta_proc_100_processed, cv2.TM_CCOEFF_NORMED)
-        #match_result = cv2.matchTemplate(~filtered_scan, ~smeeta_proc_100_processed, cv2.TM_CCORR_NORMED, mask=~self.smeeta_proc_100_processed)
+        input_img = filtered_scan.copy().astype(np.float32) 
+        filter_img = smeeta_proc_100_processed.copy().astype(np.float32) - smeeta_proc_100_processed.mean()
+
+        for xa,ya,wa,ha in areas:
+            if wa>=0.5*w and wa<w+5 and ha>=0.5*h and ha<h+5:
+                inp_img = input_img[ya:ya+ha, xa:xa+wa] 
+                inp_mean = inp_img.mean()
+                inp_img = inp_img - inp_mean
+                res = scipy.signal.correlate2d(inp_img, filter_img, mode='same', fillvalue=inp_mean)
+
+                sel_y, sel_x = np.unravel_index(res.argmax(), res.shape)
+                ymin, ymax = max(0, sel_y-h//2)+ya, max(sel_y+h//2, h)+ya
+                xmin, xmax = max(0, sel_x-w//2)+xa, max(sel_x+w//2, w)+xa
+
+                padded = np.zeros_like(smeeta_proc_100_processed)
+                padded.fill(inp_mean)
+                cutout = filtered_scan[ymin:ymax, xmin:xmax]
+                padded[:cutout.shape[0], :cutout.shape[1]] = cutout
+
+                res = cv2.absdiff(smeeta_proc_100_processed, padded).astype(np.uint8)
+                match_result[ymin,xmin] = 1-(np.count_nonzero(res))/res.size
 
         (yCoords, xCoords) = np.where( (match_result > self.template_match_threshold) & (match_result <= 1) )
-        rects = []
-        probs=[]
-        # loop over the starting (x, y)-coordinates again
-        for (x, y) in zip(xCoords, yCoords):
-            # update our list of rectangles
-            rects.append((x, y, x + w, y + h))
-            probs.append(match_result[y][x])
-        res = non_max_suppression(np.array(rects), probs=probs)
-        return res, w, h
+
+        return list(zip(xCoords, yCoords)), w, h
 
     def scan_match_text(self):
         ui_screenshot = self.wincap.get_screenshot(36)
@@ -166,15 +195,12 @@ class Scanner:
         if ui_screenshot is None: return
         w, h, _ = ui_screenshot.shape
         screenshot_time = time.time()
-        ui_screenshot_copy = ui_screenshot.copy()
 
         # get locations of template matches
         locs, wt, ht = self.template_match(ui_screenshot)
 
         stitched = None
         if len(locs) > 0:
-            # filter image
-            # text
             filtered_scan = self.text_hsv_filter(ui_screenshot, self.text_color)
             rotated_filtered_scan = cv2.warpAffine(filtered_scan, self.M, (h, w), borderMode = cv2.BORDER_CONSTANT, borderValue =255)
 
@@ -183,7 +209,7 @@ class Scanner:
                 xn,yn = locs[i][0],locs[i][1]
                 rotated_coords= np.matmul( self.M[:,:-1],np.array([[xn],[yn]]) ).astype(int)
                 xr,yr = *rotated_coords[0], *rotated_coords[1]
-                x1,y1,x2,y2 = (xr-15, yr+ht+3, xr+wt+15, yr+ht+25)
+                x1,y1,x2,y2 = (int(xr-15*self.ui_scale), int(yr+ht+3*self.ui_scale), int(xr+wt+15.5*self.ui_scale), int(yr+ht+25.5*self.ui_scale))
                 y0,x0=np.shape(rotated_filtered_scan)
                 if y1>y0 or y2>y0 or x1>x0 or x2>x0:
                     #print("Rotated coordinates out of bounds of image")
@@ -202,10 +228,10 @@ class Scanner:
                     stitched = np.concatenate((stitched, img_with_border), axis=1)
                 else:
                     stitched = rotated_filtered_scan[y1:y2,x1:x2]
-
+            
             if stitched is not None and stitched.shape[0]!=0 and stitched.shape[1]!=0:
                 # scale up stitched image
-                scaled_rotated_filtered_scan = cv2.resize(stitched, None,  fx = 5, fy = 5, interpolation = cv2.INTER_LANCZOS4)
+                scaled_rotated_filtered_scan = cv2.resize(stitched, None,  fx = max(1, int(5/self.ui_scale)), fy = max(1,int(5/self.ui_scale)), interpolation = cv2.INTER_LANCZOS4)
 
                 blur = cv2.GaussianBlur(scaled_rotated_filtered_scan,(3,3),0)
                 blur = cv2.threshold(blur, 10, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
@@ -249,6 +275,9 @@ class Scanner:
                 for remain in range(j, len(self.main_window.image_label_list)):
                     self.main_window.image_label_list[remain].clear()
                     self.main_window.label_image_label_list[remain].setText("")
+        else:
+            pass
+            #print("No templates found")
 
     def get_next_expiry(self):
         self.update_stats()
@@ -274,12 +303,19 @@ class Scanner:
                 self.sound_queue.append('procs_active_%d.mp3'%self.procs_active)
 
     def show_icon_threshold(self):
+        cur_dir = os.path.dirname(os.path.abspath(__file__))
+
         ui_screenshot = self.wincap.get_screenshot()
         if ui_screenshot is None: return
         filtered_scan = self.hsv_filter(ui_screenshot, self.icon_color, h_sens=4, s_sens=60, v_scale=0.6)
-        self.plot(filtered_scan)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+        #filtered_scan = cv2.bitwise_not(filtered_scan)
+        self.plot_lib(filtered_scan)
+        save_dir = os.path.join(cur_dir, 'saved_images', '%.0f.png'%(time.time()))
+        cv2.imwrite(save_dir, filtered_scan)
+
+        #self.plot(filtered_scan)
+        #cv2.waitKey(0)
+        #cv2.destroyAllWindows()
 
     def show_text_threshold(self):
         ui_screenshot = self.wincap.get_screenshot()
@@ -288,6 +324,15 @@ class Scanner:
         self.plot(filtered_scan)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+    
+    def show_screencap(self):
+        ui_screenshot = self.wincap.get_screenshot()
+        #print(ui_screenshot)
+        plt.imshow(ui_screenshot)
+        plt.show()
+        #self.plot_lib(ui_screenshot)
+        #cv2.waitKey(0)
+        #cv2.destroyAllWindows()
 
     def append_proc_data(self, val):
         with open('smeeta_history.csv','a+') as fd:
