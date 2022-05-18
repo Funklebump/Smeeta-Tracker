@@ -193,7 +193,7 @@ class MainWindow(QWidget):
     def create_config(self):
         if not os.path.isfile(os.path.join(self.dirname,'config.json')):
             data = {"icon_color_hsv": [95, 255, 255], "text_color_hsv": [0, 0, 255], "in_game_hud_scale": 1}
-            with open('data.json', 'w') as f:
+            with open('config.json', 'w') as f:
                 json.dump(data, f)
 
     def closeEvent(self, arg):
