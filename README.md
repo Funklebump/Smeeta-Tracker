@@ -3,6 +3,7 @@ Track smeeta affinity procs with an overlay and sound notifications.
 
 Contains additional tools for tracking Arbitration Drones in arbitration runs.
 
+![alt text](https://github.com/A-DYB/smeeta-tracker-2/blob/main/Plots/Figure_1.png?raw=true)
 # Warnings
 This application is fan made and not endorsed by Digital Extremes. This does nothing that is against TOS (all it does is process pictures of your screen and reads your log file), but use your own judgement and use at your own risk.
 
@@ -23,6 +24,7 @@ This program only works on Windows, and was only tested on Windows 10.
 - [x] Hosts can display information in the overlay related to Arbitration drone spawns
 - [x] Hosts can generate a mission summary displaying mission statistics
 - [x] Display current Arbitration mission in overlay and your Personal Best drone kills per hour for that node
+
 
 # Smeeta detector tips
 - The more visible your in-game text, the better the program will work. To improve accuracy change your UI colors for text and buffs to uncommon, highly saturated colors
