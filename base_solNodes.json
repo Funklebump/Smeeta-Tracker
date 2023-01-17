@@ -781,7 +781,7 @@
     },
     "SolNode130": {
         "value": "Lares (Mercury)",
-        "enemy": "Grineer",
+        "enemy": "Infested",
         "type": "Defense",
         "personal_best_dph": 0
     },

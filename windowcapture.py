@@ -8,8 +8,8 @@ class WindowCapture:
     cropped_x = cropped_y = 0
 
     # constructor
-    def __init__(self, window_name, capture_size, ui):
-        self.ui = ui
+    def __init__(self, window_name, capture_size, window):
+        self.window = window
         self.window_name = window_name
         # find the handle for the window we want to capture
         self.hwnd = win32gui.FindWindow(None, self.window_name)
@@ -17,25 +17,26 @@ class WindowCapture:
         if not self.hwnd:
             #raise Exception('Window not found: {}'.format(window_name))
             print('Window not found: {}'.format(window_name))
-            self.ui.window_capture_status_label.setText("Warframe window not found")
+            self.window.warframe_window_found = False
         else:
-            self.ui.window_capture_status_label.setText("Warframe window found!")
+            self.window.warframe_window_found = True
 
-    def get_screenshot(self, avg_width=None):
+    def get_screenshot(self):
         #get window properties
         if not self.hwnd:
             self.hwnd = win32gui.FindWindow(None, self.window_name)
             if self.hwnd:
-                self.ui.window_capture_status_label.setText("Warframe window found!")
+                self.window.warframe_window_found = True
             else:
                 return None
         try:
             rect = win32gui.GetWindowRect(self.hwnd)
         except:
-            self.ui.window_capture_status_label.setText("Warframe window not found")
+            self.window.warframe_window_found = False
             self.hwnd = win32gui.FindWindow(None, self.window_name)
             if self.hwnd:
-                self.ui.window_capture_status_label.setText("Warframe window found!")
+                self.window.warframe_window_found = True
+
             return None
         win_w = rect[2] - rect[0]
         # y_border_thickness = GetSystemMetrics(33) + GetSystemMetrics(4)

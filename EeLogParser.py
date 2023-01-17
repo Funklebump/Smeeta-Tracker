@@ -1,352 +1,291 @@
-# This Python file uses the following encoding: utf-8
-
 import time
-from os import SEEK_END
 import io
 from lz.reversal import reverse
-import logging
 import os
 from win32com.shell import shell, shellcon
 import calendar
 import datetime
 import matplotlib.pyplot as plt
 import numpy as np
-import csv
 import re
 import json
-
-# solNodes
-# ['SolNode', 'ClanNode', 'SettlementNode', 'MercuryHUB', 'VenusHUB', 'EarthHUB', 'SaturnHUB', 'ErisHUB', 'EuropaHUB', 'PlutoHUB', 'TradeHUB', 'EventNode', 'PvpNode', '/Lotus/Types/Keys/SortieBossKeyPhorid', 'CrewBattleNode']
+import pandas as pd
+import seaborn as sns
 
 class EeLogParser:
-    def __init__(self, max_proc_time, main_window):
-        self.main_window = main_window
-        self.ui = main_window.ui
+    def __init__(self, main_window):
+        self.window = main_window
         self.dirname = os.path.dirname(os.path.abspath(__file__))
         self.ee_log_path = os.path.join(shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA, None, 0), 'Warframe\ee.log')
-        self.global_time = 0
-        self.sync_time()
-        self.mission_start_time = 0
-        self.mission_end_time = 0
-        self.scan_log_time=0
-        self.previous_log_time=0
-        self.latest_log_time=0
-        self.initial_scan=True
+        self.pause_condition_list = ['Script [Info]: ProjectionRewardChoice.lua: Pause countdown done', 'Sys [Info]: Created /Lotus/Interface/DefenseReward.swf']
+        self.resume_condition_list = ['Script [Info]: ProjectionRewardChoice.lua: Relic reward screen shut down', 'Script [Info]: DefenseReward.lua: DefenseReward: user elected to continue']
+
+        self.current_arbitration = self.get_recent_node_name("Script [Info]: Background.lua: EliteAlertMission at ")
+        #TODO change usage of current_arbitration
+        self.recently_played_mission = self.get_recent_node_name("Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":")
+
+        self.previous_log_timestamp_s=0
+        self.latest_log_timestamp_s=0
+
+        self.game_start_time_unix_s = self.sync_time()
+
         self.in_mission=False
-        self.mission_time=0
-        self.max_proc_time=max_proc_time
-        self.first_scan=True
-        self.current_arbitration=""
-        self.current_mission=""
-
-        self.mission_state_found=False
+        self.mission_start_timestamp_s = 0
+        self.mission_end_timestamp_s = 0
+        self.mission_duration_s=0
         self.drone_spawns = 0
-        self.total_spawns = 0
+        self.enemy_spawns = 0
+        self.drones_per_hour = 0
 
-        self.status_text=''
-        self.last_spawn_time=0
-        self.time_regex = re.compile('\d*[.]\d{3}')
+    def reset(self):
+        self.current_arbitration = self.get_recent_node_name("Script [Info]: Background.lua: EliteAlertMission at ")
+        self.recently_played_mission = self.get_recent_node_name("Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":")
+
+        self.previous_log_timestamp_s=0
+        self.latest_log_timestamp_s=0
+
+        self.game_start_time_unix_s = self.sync_time()
+
+        self.in_mission=False
+        self.mission_start_timestamp_s = 0
+        self.mission_end_timestamp_s = 0
+        self.mission_duration_s=0
+        self.drone_spawns = 0
+        self.enemy_spawns = 0
+        self.drones_per_hour = 0 
 
     def sync_time(self):
-        with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
+        with open(self.ee_log_path, encoding="utf8", errors='replace') as log_file:
             for line in log_file:
-                #find time alignment
+                # find time that game was started
                 if "Sys [Diag]: Current time:" in line:
                     res = line.split("[")[2]
                     res = res.split()
                     s = res[3]+"-"+res[2]+"-"+res[5].split("]")[0]+":"+res[4]
                     timestruct = time.strptime(s, "%d-%b-%Y:%H:%M:%S")
-                    self.global_time = calendar.timegm(timestruct) - float(line.split(" ")[0])
-                    break
+                    log_timestamp_s = self.get_log_timestamp_s(line)
+                    if log_timestamp_s:
+                        return calendar.timegm(timestruct) - log_timestamp_s
+                    else:
+                        return calendar.timegm(timestruct)
+            raise Exception("Could not find log file time reference")
 
     def parse_file(self):
-        if self.first_scan:
-            self.search_arbitration()
-        i=-1
-        drone_list=[]
-        event_list=[]
-        found_mission_end=False
-        with open(self.ee_log_path, encoding="utf8", errors="ignore") as log_file:
-            for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
-                if i ==-1:
-                    # skip the first line since it can be in the process of being written to
-                    i+=1
+        found_arb=False
+        with open(self.ee_log_path, encoding="utf8", errors="replace") as log_file:
+            for line_index, line in enumerate(reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE)):
+                # skip first line, it may still be being written to
+                if line_index == 0:
                     continue
-                time_stamp_str = line.split(" ")[0]
-                reg_res = self.time_regex.match(time_stamp_str)
-                if reg_res is None:
-                    logging.info("Could not find timestamp on current line, continuing")
-                    continue
-                if isfloat(time_stamp_str):
-                    if i == 0:
-                        self.latest_log_time = float(time_stamp_str)
-                    self.scan_log_time = float(time_stamp_str)
-                else:
-                    continue
-                if self.scan_log_time <= self.previous_log_time:
-                    #We are up to date on latest logs
-                    break
-                #mission start state
-                if "GameRulesImpl::StartRound()" in line or 'Game [Info]: OnStateStarted, mission type' in line:
-                    if not found_mission_end:
-                        if not self.first_scan:
-                            self.drone_spawns=0
-                            self.total_spawns=0
-                            self.last_spawn_time=0
-                        self.in_mission=True
-                    dt=datetime.datetime.fromtimestamp(self.scan_log_time+self.global_time).strftime('%Y-%m-%d %H:%M:%S')
-                    #logging.info('Mission started at time: %s'%(dt))
-                    event_list.append('Mission started at time: %s'%(dt))
-                    self.mission_start_time = self.global_time + self.scan_log_time
-                    self.main_window.smeeta_time_reference = self.mission_start_time
-                    break
-                elif 'Game [Info]: CommitInventoryChangesToDB' in line:
-                    found_mission_end=True
-                    #logging.info('Not in mission')
-                    event_list.append('Not in mission')
-                    self.mission_end_time = self.global_time + self.scan_log_time
-                    self.in_mission=False
-                    with open(os.path.join(self.dirname,"solNodes.json")) as f:
-                        map_info = json.load(f)
-                    if self.current_mission != "" and self.drone_spawns > map_info[self.current_mission]["personal_best_dph"]:
-                        map_info[self.current_mission]["personal_best_dph"] = self.drone_spawns/((self.mission_end_time-self.mission_start_time)/3600)
-                        with open(os.path.join(self.dirname,'solNodes.json'), 'w') as outfile:
-                            json.dump(map_info, outfile)
 
-                #find drone spawns
-                if "OnAgentCreated /Npc/CorpusEliteShieldDroneAgent" in line:
-                    #drone_list.append(self.global_time+self.scan_log_time)
-                    date_string = datetime.datetime.fromtimestamp(int(self.global_time+self.scan_log_time)).strftime('%Y-%m-%d %H:%M:%S')
-                    event_list.append("Arbitration drone spawned at time: %s"%(date_string))
-                    self.drone_spawns+=1
-                    self.last_spawn_time=int(self.global_time+self.scan_log_time)
-                if "OnAgentCreated" in line and "/Npc/AutoTurretAgentShipRemaster" not in line:
-                    self.total_spawns+=1
-                if 'Script [Info]: Arbitration.lua: Destroying CorpusEliteShieldDroneAvatar' in line:
+                log_timestamp_s = self.get_log_timestamp_s(line)
+                if not log_timestamp_s:
+                    continue
+                if line_index == 1:
+                    self.latest_log_timestamp_s = log_timestamp_s
+
+                # Check if we are up to date on latest logs
+                if log_timestamp_s <= self.previous_log_timestamp_s:
+                    break
+
+                # check if mission has ended
+                if 'Game [Info]: CommitInventoryChangesToDB' in line:
+                    print(f'[{log_timestamp_s}]: Mission has ended')
+                    self.mission_end_timestamp_s = log_timestamp_s
+                    self.in_mission = False
+                    self.window.monitor.screen_scanner.reset()
+                    self.drone_spawns = 0
+                    self.enemy_spawns = 0
+                    self.drones_per_hour = 0
+                    self.parse_arbitration_logs()
+                    break
+                # Check if drone has spawned
+                elif "OnAgentCreated /Npc/CorpusEliteShieldDroneAgent" in line:
+                    self.drone_spawns += 1
+                # Check if enemy has spawned
+                elif "OnAgentCreated" in line and "/Npc/AutoTurretAgentShipRemaster" not in line:
+                    self.enemy_spawns+=1
+                elif 'Script [Info]: Arbitration.lua: Destroying CorpusEliteShieldDroneAvatar' in line:
                     self.drone_spawns-=1
-                    date_string = datetime.datetime.fromtimestamp(int(self.global_time+self.scan_log_time)).strftime('%Y-%m-%d %H:%M:%S')
-                    event_list.append("Arbitration drone despawned: %s"%(date_string))
-                if not self.first_scan and "Script [Info]: Background.lua: EliteAlertMission at " in line:
-                    with open(os.path.join(self.dirname,"solNodes.json")) as f:
-                        map_info = json.load(f)
-                    if "SolNode" in line:
-                        node = (re.search(r'SolNode[\d]+', line)).group(0)
-                    elif "ClanNode" in line:
-                        node = (re.search(r'ClanNode[\d]+', line)).group(0)
-                    self.current_arbitration = "%s %s %s (PB: %d drones/hr)"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'],map_info[node]['personal_best_dph'])
-                if not self.first_scan and "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
-                    if "SolNode" in line:
-                        self.current_mission = (re.search(r'SolNode[\d]+', line)).group(0)
-                    elif "ClanNode" in line:
-                        self.current_mission = (re.search(r'ClanNode[\d]+', line)).group(0)
-                i+=1
-        event_list.reverse()
-        for elem in event_list:
-            logging.info(elem)
-        self.previous_log_time = self.latest_log_time
-
-        if self.in_mission:
-            self.mission_time = self.latest_log_time-(self.mission_start_time-self.global_time)
-        else:
-            self.mission_time = self.mission_end_time-self.mission_start_time
-        self.first_scan=False
-        return self.drone_spawns
-
-    def search_arbitration(self):
-        with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
-            for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
-                if "Script [Info]: Background.lua: EliteAlertMission at " in line:
-                    with open(os.path.join(self.dirname,"solNodes.json")) as f:
-                        map_info = json.load(f)
-                    if "SolNode" in line:
-                        node = (re.search(r'SolNode[\d]+', line)).group(0)
-                    elif "ClanNode" in line:
-                        node = (re.search(r'ClanNode[\d]+', line)).group(0)
-                    self.current_arbitration = "%s %s %s (PB: %d drones/hr)"%(map_info[node]['value'],map_info[node]['enemy'],map_info[node]['type'],map_info[node]['personal_best_dph'])
+                # Check for mission start
+                elif "GameRulesImpl::StartRound()" in line or 'Game [Info]: OnStateStarted, mission type' in line:
+                    self.in_mission = True
+                    self.mission_start_timestamp_s = log_timestamp_s
                     break
-        # get most recent mission
-        with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
-            for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
+
                 if "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
-                    if "SolNode" in line:
-                        self.current_mission = (re.search(r'SolNode[\d]+', line)).group(0)
-                    elif "ClanNode" in line:
-                        self.current_mission = (re.search(r'ClanNode[\d]+', line)).group(0)
-                    break
+                    recently_played_mission = self.parse_node_string(line)
+                    if recently_played_mission:
+                        self.recently_played_mission = recently_played_mission
+                elif "Script [Info]: Background.lua: EliteAlertMission at " in line and not found_arb:
+                    found_arb = True
+                    current_arbitration = self.parse_node_string(line)
+                    if current_arbitration:
+                        self.current_arbitration = current_arbitration
+
+        self.previous_log_timestamp_s = self.latest_log_timestamp_s
+
+        self.mission_duration_s = self.latest_log_timestamp_s - self.mission_start_timestamp_s  if self.in_mission else self.mission_end_timestamp_s - self.mission_start_timestamp_s
+        self.drones_per_hour = 3600*self.drone_spawns/(max(1, self.mission_duration_s))
+
+    def get_log_timestamp_s(self, line):
+        line_split = line.split(" ")
+        if len(line_split) == 0:
+            return
+        timestamp_str = line_split[0]
+        match_object = re.search(r'\d*[.]\d{3}', timestamp_str)
+        if match_object is None:
+            return
+        if not isfloat(timestamp_str):
+            return
+        return float(timestamp_str)
+
+    def get_recent_node_name(self, search_condition):
+        with open(self.ee_log_path, encoding="utf8", errors='replace') as log_file:
+            for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
+                if search_condition in line:
+                    return self.parse_node_string(line)
+
+    def parse_node_string(self, line):
+        for node_type in [r'SolNode', 'ClanNode', 'SettlementNode']:
+            match = re.search(node_type + r'[\d]+', line)
+            if match:
+                break
+        if not match:
+            return
+        return match.group(0)
 
     def plot_logs(self):
         fig, axs = plt.subplots(2,2)
-        #fig.suptitle('Vertically stacked subplots')
+        df = self.parse_arbitration_logs()
+        if df is None:
+            print(f'No mission data')
+            return
 
-        axs[0][0].set_ylabel('Count')
+        sns.lineplot(data=df, x='mission_time_minutes', y='drones_per_hour', ax=axs[1][1], ci=None)
+        sns.lineplot(data=df, x='mission_time_minutes', y='drones_per_enemy', ax=axs[0][1], ci=None)
+        sns.lineplot(data=df, x='mission_time_minutes', y='enemy_count', ax=axs[0][0], ci=None)
+        sns.lineplot(data=df, x='mission_time_minutes', y='drone_count', ax=axs[1][0], ci=None)
+
         axs[0][0].set_title('Enemy spawns')
-        axs[1][0].set_ylabel('Count')
         axs[1][0].set_title('Drone spawns')
+        axs[0][1].set_title('Drones per enemy')
+        axs[1][1].set_title('Drones per hour')
 
-        axs[0][1].set_title('Normalized spawns')
-        #axs[1][1].set_title('Drone Rate (drones per enemy)')
-        axs[1][1].set_title('Drone Rate')
-        axs[1][1].set_ylabel('Drones Per Hour')
+        df.sort_values(by='mission_time_minutes', inplace=True)
+        vitus_chance = self.get_vitus_essence_chance()
+        df['boost'] = np.array([vitus_chance]*len(df.index))
+        df['drone_count_diff'] = np.diff(df.drone_count.to_numpy(), prepend=0)
 
-        enemy_spawn_times=[]
-        enemy_spawn_count=[]
-        drone_spawn_times=[]
-        drone_spawn_count=[]
-        start_time=0
-        en_count=0
-        drone_count=0
-        line_count=0
-        latest_time=0
-        mission_end_time=0
-        with open(self.ee_log_path, encoding="utf8", errors='ignore') as log_file:
-            for line in reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE):
+        smeeta_proc_timestamps_unix_s = get_smeeta_proc_history()
+        mission_start_time_unix_s = df.timestamp_unix_s.min()
+        mission_end_time_unix_s = df.timestamp_unix_s.max()
+        mission_smeeta_proc_timestamps_unix_s = smeeta_proc_timestamps_unix_s[np.where((smeeta_proc_timestamps_unix_s>mission_start_time_unix_s) & (smeeta_proc_timestamps_unix_s < mission_end_time_unix_s))]
+        for smeeta_proc_timestamp in mission_smeeta_proc_timestamps_unix_s:
+            axs[1][0].axvspan((smeeta_proc_timestamp - mission_start_time_unix_s)/60, (smeeta_proc_timestamp - mission_start_time_unix_s + self.window.affinity_proc_duration)/60, alpha=0.5, color='green')
+            df.loc[ (df.timestamp_unix_s > smeeta_proc_timestamp) & (df.timestamp_unix_s < smeeta_proc_timestamp + self.window.affinity_proc_duration), 'boost'] *= 2
+        axs[1][0].legend(['Smeeta proc'])
+
+        total_vitus_essence = np.sum( np.multiply( df.boost.to_numpy(), df.drone_count_diff.to_numpy() ) )
+
+        # get last mission
+        # current_node = self.get_recent_node_name("Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":")
+        mission_info_str = self.get_node_info_string(self.recently_played_mission)
+
+        plt.suptitle(f'{mission_info_str}\nDrones: {df.drone_count.max()}\nAvg VE Drops: {total_vitus_essence:.0f}; Avg Boost: {total_vitus_essence/(max(1,df.drone_count.max())*0.06):.2f}')
+        fig.tight_layout()
+        
+        plt.show()
+
+    def parse_arbitration_logs(self):
+        data = []
+        drone_count = 0
+        enemy_count = 0
+        latest_log_time_s = None
+        mission_end_time_s = None
+
+        with open(self.ee_log_path, encoding="utf8", errors='replace') as log_file:
+            for line_index, line in enumerate(reverse(log_file, batch_size=io.DEFAULT_BUFFER_SIZE)):
                 if isfloat(line.split(" ")[0]):
-                    t_val = float(line.split(" ")[0])
-                    if line_count==0:
-                        latest_time= t_val
-                        line_count+=1
+                    log_time_s = float(line.split(" ")[0])
+                    if line_index == 0 or latest_log_time_s is None:
+                        latest_log_time_s = log_time_s
+                # check for mission start        
                 if "GameRulesImpl::StartRound()" in line or 'Game [Info]: OnStateStarted, mission type' in line:
-                    start_time=t_val
+                    data.append({'log_time_s':log_time_s, 'drone_count':drone_count, 'enemy_count':enemy_count})
                     break
                 elif 'Game [Info]: CommitInventoryChangesToDB' in line:
-                    mission_end_time = self.global_time + t_val
-                if "OnAgentCreated /Npc/CorpusEliteShieldDroneAgent" in line:
-                    drone_spawn_times.append(t_val)
+                    mission_end_time_s = self.game_start_time_unix_s + log_time_s
+                # check for agent creation / deletion
+                elif "OnAgentCreated /Npc/CorpusEliteShieldDroneAgent" in line:
                     drone_count+=1
-                if "OnAgentCreated" in line and "/Npc/AutoTurretAgentShipRemaster" not in line:
-                    enemy_spawn_times.append(t_val)
-                    en_count+=1
-                if 'Script [Info]: Arbitration.lua: Destroying CorpusEliteShieldDroneAvatar' in line:
+                    data.append({'log_time_s':log_time_s, 'drone_count':drone_count, 'enemy_count':enemy_count})
+                elif "OnAgentCreated" in line and "/Npc/AutoTurretAgentShipRemaster" not in line:
+                    enemy_count+=1
+                    data.append({'log_time_s':log_time_s, 'drone_count':drone_count, 'enemy_count':enemy_count})
+                elif 'Script [Info]: Arbitration.lua: Destroying CorpusEliteShieldDroneAvatar' in line:
                     drone_count-=1
-                    if len(drone_spawn_times)>0 and len(enemy_spawn_count)>0:
-                        drone_spawn_times.pop(-1)
-                        enemy_spawn_count.pop(-1)
-        drone_spawn_count = np.array(range(1,len(drone_spawn_times)+1))
-        enemy_spawn_count = np.array(range(1,len(enemy_spawn_times)+1))
-        enemy_spawn_times.reverse()
-        drone_spawn_times.reverse()
+                    data.append({'log_time_s':log_time_s, 'drone_count':drone_count, 'enemy_count':enemy_count})
 
-        enemy_spawn_times = np.array([f-start_time for f in enemy_spawn_times])
-        drone_spawn_times = np.array([f-start_time for f in drone_spawn_times])
+        if mission_end_time_s is None:
+            mission_end_time_s = latest_log_time_s
 
-        if len(enemy_spawn_times)>0 and len(drone_spawn_times)>0:
-            if len(drone_spawn_times)>0:
-                drone_rate=[]
-                j=0
-                '''
-                for i, elem in enumerate(enemy_spawn_count):
-                    if enemy_spawn_times[i] > drone_spawn_times[j]:
-                        j+=1
-                    if j>=len(drone_spawn_count):
-                        j=len(drone_spawn_count)-1
-                    if elem-drone_spawn_count[j]>0:
-                        drone_rate.append(100*drone_spawn_count[j]/(elem-drone_spawn_count[j]))
-                    else:
-                        drone_rate.append(0)
-                '''
-                for i, elem in enumerate(drone_spawn_count):
-                    drone_rate.append(drone_spawn_count[i]/(drone_spawn_times[i]/3600))
+        if len(data) == 0:
+            return
 
-                drone_rate=np.array(drone_rate)
-                #axs[1][1].plot(enemy_spawn_times, drone_rate)
-                axs[1][1].plot(drone_spawn_times/60, drone_rate)
-                #axs[1][1].set_ylim(0,20)
-                axs[0][1].plot(drone_spawn_times/60, drone_spawn_count/np.max(drone_spawn_count), label='Drones', c='b')
+        df = pd.DataFrame(data)
+        df.drone_count = np.abs( df.drone_count.to_numpy() - df.drone_count.max() )
+        df.enemy_count = np.abs( df.enemy_count.to_numpy() - df.enemy_count.max() )
+        df['timestamp_unix_s'] = df.log_time_s.to_numpy() + self.game_start_time_unix_s
+        df['mission_time_s'] = df.log_time_s.to_numpy() - df.log_time_s.min()
+        df['mission_time_minutes'] = df.mission_time_s.to_numpy()/60
+        df['drones_per_hour'] = np.divide(df.drone_count.to_numpy()*3600, np.clip(df.mission_time_s.to_numpy(), 1, None))
+        df['drones_per_enemy'] = np.divide(df.drone_count.to_numpy(), np.clip(df.enemy_count.to_numpy(), 1, None))
+        df['enemies_per_hour'] = np.divide(df.enemy_count.to_numpy()*3600, np.clip(df.mission_time_s.to_numpy(), 1, None))
 
-            axs[0][1].plot(enemy_spawn_times/60, enemy_spawn_count/np.max(enemy_spawn_count), label='Enemies', c='r')
-
-            axs[1][0].scatter(drone_spawn_times/60, drone_spawn_count, s=2, c='b')
-            axs[0][0].plot(enemy_spawn_times/60, enemy_spawn_count, c='r')
-
-            axs[0][1].legend()
-            axs[0][0].set_xlabel('Time (min)')
-            axs[1][0].set_xlabel('Time (min)')
-            axs[0][1].set_xlabel('Time (min)')
-            axs[1][1].set_xlabel('Time (min)')
-
-            proc_data = get_proc_data()
-            st = start_time+self.global_time
-            i=0
-            for elem in proc_data:
-                if elem > drone_spawn_times[0]+st and elem < drone_spawn_times[-1]+st:
-                    axs[1][0].axvspan((elem-st)/60, (elem-st+self.max_proc_time)/60, alpha=0.5, color='green', label='_'*i+'Smeeta proc')
-                    i+=1
-            if i > 0: axs[1][0].legend()
-
-
-            # get loot
-            spawn_times = [f+st for f in drone_spawn_times]
-            loot = self.get_expected_loot(spawn_times)
-            self.ui.average_drops_label.setText(str(int(loot)))
-
-            self.ui.drone_spawns_label.setText(str(drone_count))
-            self.ui.total_spawns_label.setText(str(en_count))
-            if mission_end_time == 0:
-                mission_end_time = latest_time
-            mission_t = int(mission_end_time-st)
-            self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=mission_t)))
-            if mission_t>0:
-                self.ui.drone_kpm_label.setText('%.2f, %.2f'%(drone_count/(mission_t/60),drone_count/(mission_t/3600)))
-                self.ui.kpm_label.setText('%.2f'%(en_count/(mission_t/60)))
-            if en_count>0:
-                self.ui.drone_rate_label.setText('%.2f%%'%(100*drone_count/(en_count-drone_count)))
-            else: self.ui.drone_rate_label.setText('-')
-
-            # get last mission
-            self.search_arbitration()
+        #last_mission_node = self.get_recent_node_name("Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":")
+        if self.recently_played_mission is not None:
             with open(os.path.join(self.dirname,"solNodes.json")) as f:
                 map_info = json.load(f)
-            node = self.current_mission
-            if node != "":
-                mission_str = "%s - %s %s"%(map_info[node]["value"],map_info[node]['enemy'],map_info[node]['type'])
-            else:
-                mission_str = ""
-            plt.suptitle("%s\nDrones: %d\nAverage VE: %d (%.1fx boost)"%(mission_str, drone_count, loot, loot/(drone_count*0.06)))
+            node_info = map_info.get(self.recently_played_mission)
+            if node_info:
+                PB = node_info.get("personal_best_dph", 0)
+                if df.drones_per_hour.iloc[-1] > PB:
+                    map_info[self.recently_played_mission]["personal_best_dph"] = df.drones_per_hour.iloc[-1]
+                    # save 
+                    with open(os.path.join(self.dirname,"solNodes.json"), "w") as fp:
+                        json.dump(map_info , fp) 
 
-            fig.tight_layout()
+        return df
+    
+    def get_vitus_essence_chance(self):
+        return self.window.drop_chance_booster * self.window.drop_booster * self.window.drop_booster2 * \
+                    self.window.bless_booster * self.window.dark_sector_booster * 0.06
 
-            plt.show()
+    def get_node_info_string(self, node):
+        mission_info_str=''
+        if not node:
+            return mission_info_str
+        with open(os.path.join(self.dirname,"solNodes.json")) as f:
+            map_info = json.load(f)
+        node_info = map_info.get(node)
+        if node_info:
+            mission_info_str = f'{node_info["value"]} - {node_info["enemy"]} {node_info["type"]}'
+        return mission_info_str
 
-    # spawn times epoch
-    def get_expected_loot(self, spawn_times):
-        drop_chance_booster,drop_booster,bless_booster=1,1,1
-        if self.ui.drop_chance_booster_checkbox.isChecked():
-            drop_chance_booster = 2
-        if self.ui.drop_booster_checkbox.isChecked():
-            drop_booster = 2
-        if self.ui.bless_booster_checkbox.isChecked():
-            bless_booster = 1.25
-        dark_sector_booster = self.ui.dark_sector_booster_spinner.value()
-
-        proc_data = get_proc_data()
-        valid_proc_data = [ f for f in proc_data if f>spawn_times[0] and f<spawn_times[-1] ]
-        print(len(spawn_times))
-
-        proc_index = 0
-        loot=0
-        for spawn_time in spawn_times:
-            proc_hit_count=0
-            for proc_time in valid_proc_data:
-                if spawn_time>proc_time and spawn_time<(proc_time+self.max_proc_time):
-                    proc_hit_count+=1
-            loot += 2**proc_hit_count * drop_chance_booster * drop_booster * bless_booster * dark_sector_booster * 0.06
-        return loot
-#1644367086.2767293
 def isfloat(value):
-  try:
-    float(value)
-    return True
-  except ValueError:
-    return False
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
 
-def get_proc_data():
+def get_smeeta_proc_history():
     data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'smeeta_history.csv')
     if not os.path.isfile(data_path):
-        f = open(data_path, 'a+')
-        f.close()
-    with open(data_path, newline='') as f:
-        reader = csv.reader(f)
-        time_list= list(reader)
-    return [float(val[0]) for val in time_list]
+        df = pd.DataFrame(list())
+        df.to_csv(data_path)
+    df = pd.read_csv(data_path)
+    return df.to_numpy().astype(float)
 
 
