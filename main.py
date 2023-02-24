@@ -202,7 +202,10 @@ class MainWindow(QWidget):
             data = json.load(json_file)
         data['icon_color_hsv'] = self.icon_color_hsv
         data['text_color_hsv'] = self.text_color_hsv
-        data["in_game_hud_scale"] = float(self.ui.ui_scale_combo.currentText())
+        if is_float(self.ui.ui_scale_combo.currentText()):
+            data["in_game_hud_scale"] = float(self.ui.ui_scale_combo.currentText())
+        else:
+            data["in_game_hud_scale"] = 1
 
         with open(os.path.join(self.script_folder,'config.json'), 'w') as outfile:
             json.dump(data, outfile)
@@ -521,6 +524,16 @@ class Overlay(QtWidgets.QDialog):
         def set_text_size(self, size):
             for lbl in self.label_list:
                 lbl.setFont(QtGui.QFont('Arial', int(size)))
+
+def is_float(element: any) -> bool:
+    #If you expect None to be passed:
+    if element is None: 
+        return False
+    try:
+        float(element)
+        return True
+    except ValueError:
+        return False
 
 def str2bool(v):
   return v.lower() in ("yes", "true", "t", "1")
