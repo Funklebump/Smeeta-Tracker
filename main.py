@@ -92,6 +92,8 @@ class MainWindow(QWidget):
         self.ui.analyze_ee_log_button.clicked.connect(self.monitor.log_parser.plot_logs)
         self.ui.overlay_text_size_slider.valueChanged.connect(lambda : self.overlay.set_text_size(13*(1+self.ui.overlay_text_size_slider.value()/100)))
         self.ui.template_match_slider.valueChanged.connect(self.update_template_match_condition)
+        self.ui.refresh_rate_slider.valueChanged.connect(self.update_scan_refresh_rate)
+
 
         self.ui.r_spinner.valueChanged.connect(self.update_rgb_to_hsv_label)
         self.ui.g_spinner.valueChanged.connect(self.update_rgb_to_hsv_label)
@@ -110,7 +112,6 @@ class MainWindow(QWidget):
                                 self.ui.sounds_checkbox,
                                 self.ui.ui_scale_combo,
                                 self.ui.enable_affinity_scanner_checkbox,
-                                self.ui.track_arbitration_drone_checkbox,
                                 self.ui.icon_color_button,
                                 self.ui.text_color_button,
                                 self.ui.reset_icon_color_default_button,
@@ -132,6 +133,8 @@ class MainWindow(QWidget):
         self.guirestore(QtCore.QSettings(os.path.join(self.script_folder, 'saved_settings.ini'), QtCore.QSettings.IniFormat))
 
         self.update_template_match_condition()
+        self.update_scan_refresh_rate()
+        os.system('cls')
 
     def update_settings(self):
         self.affinity_proc_duration = 120 if self.ui.time_120_radio_button.isChecked() else 156
@@ -271,6 +274,10 @@ class MainWindow(QWidget):
         self.monitor.screen_scanner.template_match_threshold = self.ui.template_match_slider.value()/100
         self.ui.template_match_label.setText("%d%%"%(self.ui.template_match_slider.value()))
 
+    def update_scan_refresh_rate(self):
+        self.monitor.screen_scanner.refresh_rate_s = 0.5+2*self.ui.refresh_rate_slider.value()/100
+        self.ui.refresh_rate_label.setText(f'{self.monitor.screen_scanner.refresh_rate_s:.1f}s')
+
     def update_rgb_to_hsv_label(self):
         r = self.ui.r_spinner.value()/255
         g = self.ui.g_spinner.value()/255
@@ -328,7 +335,6 @@ class MainWindow(QWidget):
 
 
     def guirestore(self, settings):
-
         # Restore geometry  
         #self.resize(settings.value('size', QtCore.QSize(500, 500)))
         self.move(settings.value('pos', QtCore.QPoint(60, 60)))
@@ -404,6 +410,7 @@ class MainWindow(QWidget):
                 self.overlay.scan_label_group.add_text(f'Active: {active_procs}')
                 self.overlay.scan_label_group.add_text(f'Next Expiry: {int(next_affinity_expiry_s)}')
                 self.overlay.scan_label_group.add_text(f'Remaining Chances: {remaining_chances}')
+                
                 # update main window labels
                 self.ui.active_label.setText(f'{active_procs}')
                 self.ui.total_boost_label.setText(f'{2**active_procs}')
@@ -414,6 +421,10 @@ class MainWindow(QWidget):
                 self.ui.total_boost_label.setText(f'{1}')
                 self.ui.next_expiry_label.setText(f'-')
                 self.ui.extra_proc_chances_label.setText(f'-')
+
+            if self.monitor.log_parser.in_mission and self.ui.charm_rotation_checkbox.isChecked(): 
+                ref_timestamp = max(self.monitor.log_parser.mission_start_timestamp_s+1, self.monitor.screen_scanner.previous_proc_trigger_timestamp_unix_s)
+                self.overlay.scan_label_group.add_text(f'Charm Rotation: {(27.4-(time.time() - (ref_timestamp))%27.4):.1f}s')
 
             # update ui labels
             self.ui.drone_spawns_label.setText(str(self.monitor.log_parser.drone_spawns))

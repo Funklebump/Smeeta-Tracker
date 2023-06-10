@@ -20,29 +20,32 @@ class Monitor():
         self.qthread_list = []
 
     def start_scanning(self):
-        if win32gui.FindWindow(None, 'Warframe'):
-            self.log_parser.reset()
-            self.screen_scanner = ScreenScanner(self.parent_window)
-            self.monitor_game = True
-            self.parent_window.disable_setting_buttons()
-
-            if self.parent_window.ui.enable_affinity_scanner_checkbox.isChecked():
-                sst = self.ScreenScannerThread(self.parent_window, self.screen_scanner, self.monitor_game)
-                sst.update_gui.connect(self.parent_window.on_data_ready)
-                sst.start()
-                self.qthread_list.append(sst)
-
-                uot = self.UpdateOverlayThread(self.parent_window, self.screen_scanner, self.log_parser, self.monitor_game)
-                uot.update_gui.connect(self.parent_window.on_data_ready)
-                uot.start()
-                self.qthread_list.append(uot)
-
-            if self.parent_window.ui.sounds_checkbox.isChecked():
-                x3 = threading.Thread(target=self.sound_thread, daemon=True )
-                x3.start()
-                self.thread_list.append(x3)
-        else:
+        if win32gui.FindWindow(None, 'Warframe')is None:
             print('Cannot find Warframe window')
+            return 
+        
+        self.log_parser.reset()
+        self.screen_scanner = ScreenScanner(self.parent_window)
+        self.monitor_game = True
+        self.parent_window.disable_setting_buttons()
+
+        if self.parent_window.ui.enable_affinity_scanner_checkbox.isChecked():
+            sst = self.ScreenScannerThread(self.parent_window, self.screen_scanner, self.monitor_game)
+            sst.update_gui.connect(self.parent_window.on_data_ready)
+            sst.start()
+            self.qthread_list.append(sst)
+            self.screen_scanner.sound_queue.append('starting_scan.mp3')
+
+            uot = self.UpdateOverlayThread(self.parent_window, self.screen_scanner, self.log_parser, self.monitor_game)
+            uot.update_gui.connect(self.parent_window.on_data_ready)
+            uot.start()
+            self.qthread_list.append(uot)
+
+        if self.parent_window.ui.sounds_checkbox.isChecked():
+            x3 = threading.Thread(target=self.sound_thread, daemon=True )
+            x3.start()
+            self.thread_list.append(x3)
+            
 
     def stop_scanning(self):
         for th in self.qthread_list:
@@ -81,8 +84,8 @@ class Monitor():
         def run(self):
             while(self.monitor_game):
                 self.screen_scanner.scan_match_template()
-                self.update_gui.emit(0)
-                time.sleep(2)          
+                #self.update_gui.emit(0)
+                time.sleep(self.screen_scanner.refresh_rate_s)          
 
     class UpdateOverlayThread(QtCore.QThread):
         update_gui = QtCore.Signal(object)
@@ -110,5 +113,7 @@ class Monitor():
                 if next_affinity_expiry_unix:
                     time.sleep(min(1, (next_affinity_expiry_unix - time.time())%1))
                 else:
-                    time.sleep(2)
+                    ref_timestamp = max(self.log_parser.mission_start_timestamp_s+1, self.screen_scanner.previous_proc_trigger_timestamp_unix_s)
+                    charm_rotation = (27.4-(time.time() - (ref_timestamp))%27.4)
+                    time.sleep(charm_rotation%1)
             print('monitor_game was set false! exiting overlay update thread')

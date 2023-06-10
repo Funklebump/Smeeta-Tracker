@@ -24,6 +24,9 @@ class ScreenScanner:
         self.main_window=main_window
 
         self.smeeta_history_file = os.path.join(self.main_window.script_folder,'smeeta_history.csv')
+        if not os.path.isfile(self.smeeta_history_file):
+            with open(self.smeeta_history_file, "w") as emptycsv:
+                pass
 
         self.ui_scale = main_window.ui_scale
         self.ui_rotation = -3.65/self.ui_scale
@@ -66,6 +69,9 @@ class ScreenScanner:
 
         self.template_match_status_text = ''
 
+        self.previous_proc_trigger_timestamp_unix_s = 0
+        self.refresh_rate_s = 2
+
         self.affinity_proc_list = []
         self.sound_queue = deque([])
 
@@ -94,55 +100,6 @@ class ScreenScanner:
             contour_list.append((x,y,w,h))
         return contour_list
 
-    def template_match_old(self, screenshot):
-        template = self.affinity_proc_template
-        h,w = template.shape
-
-        #filtered_scan = hsv_filter(screenshot, self.icon_color, h_sens=4, s_sens=60, v_scale=0.6)
-        #filtered_scan = self.icon_hsv_filter(screenshot)
-        filtered_scan = self.icon_filter(screenshot, self.icon_color, h_sens=4, s_sens=60, v_scale=0.6)
-
-        match_result = np.zeros_like(filtered_scan).astype(np.float32)
-        
-        interesting_area_coords = self.get_search_areas(filtered_scan)
-
-        input_img = filtered_scan.copy().astype(np.float32) 
-        template_img_norm = template.copy().astype(np.float32) - template.mean()
-
-        for xa,ya,wa,ha in interesting_area_coords:
-            detect_area = np.sum(255-input_img[ya:ya+ha, xa:xa+wa])
-            template_area = np.sum(255-template)
-            # Check if size of blob is comparable to the template
-            #if wa>=0.1*w and ha>=0.1*h: # and wa<w+5 and ha<h+5:
-            if detect_area > template_area*0.6 and detect_area < template_area*1.1:
-                interesting_area = input_img[ya:ya+ha, xa:xa+wa]
-                interesting_area_mean = interesting_area.mean()
-                interesting_area_norm = interesting_area - interesting_area_mean
-                res = scipy.signal.correlate2d(interesting_area_norm, template_img_norm, mode='same', fillvalue=interesting_area_mean) 
-
-                # get index where overlap is maximum
-                corr_max_index = res.argmax()
-                sel_y, sel_x = np.unravel_index(corr_max_index, res.shape)
-
-                ymin, ymax = max(0, sel_y-h//2)+ya, max(sel_y+h//2, h)+ya
-                xmin, xmax = max(0, sel_x-w//2)+xa, max(sel_x+w//2, w)+xa
-                
-                padded = np.zeros_like(template)
-                padded.fill(interesting_area_mean)
-                cutout = filtered_scan[ymin:ymax, xmin:xmax]
-                padded[:cutout.shape[0], :cutout.shape[1]] = cutout
-                
-                res = cv2.absdiff(template, padded).astype(np.uint8)
-                match_result[ymin,xmin] = 1-(np.count_nonzero(res))/res.size
-                print(match_result[ymin,xmin])
-
-        (yCoords, xCoords) = np.where( (match_result > self.template_match_threshold) & (match_result <= 1) )
-        self.template_match_status_text = f'Max template match: {np.max(match_result[match_result<=1])*100:.1f}%'
-        if len(yCoords)==0:
-            print(f'Template match threshold of {self.template_match_threshold*100:.1f}% cross correlation not satisfied by any elements. Max match found: {np.max(match_result[match_result<=1])*100:.1f}%')
-
-        return list(zip(xCoords, yCoords)), w, h
-
     def template_match(self, screenshot, plot=False):
         template = self.affinity_proc_template
         h,w = template.shape
@@ -159,8 +116,6 @@ class ScreenScanner:
         for xa,ya,wa,ha in interesting_area_coords:
             detect_area = np.sum(255-input_img[ya:ya+ha, xa:xa+wa])
             template_area = np.sum(255-template)
-            # Check if size of blob is comparable to the template
-            #if wa>=0.1*w and ha>=0.1*h: # and wa<w+5 and ha<h+5:
             
             if detect_area > template_area*0.5 and detect_area < template_area*2 :# and wa<w and ha<h :
 
@@ -168,33 +123,17 @@ class ScreenScanner:
                 interesting_area_mean = interesting_area.mean()
                 interesting_area_norm = interesting_area - interesting_area_mean
 
-                res = scipy.signal.correlate2d(template_img_norm, interesting_area_norm, mode='same', fillvalue=interesting_area_norm)
+                # set fillvalue to 0 or interesting_area_norm.min()
+                res = scipy.signal.correlate2d(template_img_norm, interesting_area_norm, mode='same', fillvalue=0)
                 
                 # get index where overlap is maximum
                 corr_max_index = res.argmax()
                 sel_y, sel_x = np.unravel_index(corr_max_index, res.shape)
 
-                # Extract the region of the template that aligns with the test image
-                #aligned_template = template[sel_y:sel_y+interesting_area.shape[0], sel_x:sel_x+interesting_area.shape[1]]
-
-                # # Determine the border widths
-                # top_border = sel_y - (interesting_area.shape[0] // 2)
-                # bottom_border = template_img_norm.shape[0] - (sel_y + (interesting_area.shape[0] - interesting_area.shape[0] // 2))
-                # left_border = sel_x - (interesting_area.shape[1] // 2)
-                # right_border = template_img_norm.shape[1] - (sel_x + (interesting_area.shape[1] - interesting_area.shape[1] // 2))
-
-                # top_border = max(top_border, 0)
-                # bottom_border = max(bottom_border, 0)
-                # left_border = max(left_border, 0)
-                # right_border = max(right_border, 0)
-
-                # # Add borders to the template
-                # bordered_scan = np.pad(interesting_area, ((top_border, bottom_border), (left_border, right_border)), mode='constant', constant_values=255)
-                #eq = (aligned_template==interesting_area)
-                
-                #pctg = 100*np.where(eq==True)[0].size/eq.size
-
-                normalized_peak = res[sel_y, sel_x] / np.sqrt(np.sum(interesting_area_norm ** 2) * np.sum(template_img_norm ** 2))
+                denom = np.sqrt(abs(np.sum(interesting_area_norm ** 2) * np.sum(template_img_norm ** 2)))
+                if denom == 0:
+                    continue
+                normalized_peak = res[sel_y, sel_x] / denom
                 percentage_match = (normalized_peak)*100
 
                 if plot == True:
@@ -212,9 +151,9 @@ class ScreenScanner:
                     fig.show()
 
                 # use for making templates
-                if percentage_match > 55:
-                    script_folder = Path(__file__).parent.absolute()
-                    #cv2.imwrite(os.path.join(script_folder, 'Templates', f'{int(100*self.ui_scale)}p_new1.png'), interesting_area)
+                # if percentage_match > 40:
+                #     cv2.imwrite(os.path.join(Path(__file__).parent.absolute(), 'Templates', f'{int(100*self.ui_scale)}p_new_t1.png'), interesting_area)
+                #     input()
 
                 ymin, ymax = max(0, sel_y-h//2)+ya, max(sel_y+h//2, h)+ya
                 xmin, xmax = max(0, sel_x-w//2)+xa, max(sel_x+w//2, w)+xa
@@ -225,8 +164,8 @@ class ScreenScanner:
 
         (yCoords, xCoords) = np.where( (match_result > self.template_match_threshold) & (match_result <= 1) )
         self.template_match_status_text = f'Max template match: {np.max(match_result[match_result<=1])*100:.1f}%'
-        if len(yCoords)==0:
-            print(f'Template match threshold of {self.template_match_threshold*100:.1f}% not satisfied by any elements. Max match found: {np.max(match_result[match_result<=1])*100:.1f}%')
+        # if len(yCoords)==0:
+        #     print(f'Template match threshold of {self.template_match_threshold*100:.1f}% not satisfied by any elements. Max match found: {np.max(match_result[match_result<=1])*100:.1f}%')
 
         return list(zip(xCoords, yCoords)), w, h
 
@@ -246,7 +185,9 @@ class ScreenScanner:
                     self.sound_queue.append('procs_active_%d.mp3'%(len(self.affinity_proc_list)))
 
         ui_screenshot = self.wincap.get_screenshot()
-        if ui_screenshot is None: return
+        if ui_screenshot is None: 
+            print("Error: Cannot find Warframe window")
+            return
         w, h, _ = ui_screenshot.shape
         screenshot_time_unix = time.time()
 
@@ -318,6 +259,7 @@ class ScreenScanner:
                         valid_time = (proc_time > self.affinity_duration-25 and proc_time <= self.affinity_duration) #proc_time > self.affinity_duration-10 and #TODO
                     #print(f'confident: {confident}, valid time: {valid_time}')
                     if confident and valid_width and valid_time:
+                        self.previous_proc_trigger_timestamp_unix_s = proc_time+screenshot_time_unix-self.affinity_duration
                         self.affinity_proc_list.append( AffinityProc(proc_time+screenshot_time_unix-self.affinity_duration, self.affinity_duration) )
                         self.sound_queue.append('procs_active_%d.mp3'%(len(self.affinity_proc_list)))
                         date_string = datetime.datetime.fromtimestamp(int(screenshot_time_unix-(self.affinity_duration-proc_time))).strftime('%Y-%m-%d %H:%M:%S')
@@ -405,12 +347,18 @@ class ScreenScanner:
 
     def display_detection_area(self):
         ui_screenshot = self.wincap.get_screenshot()
+        if ui_screenshot is None: 
+            print("Error: Cannot find Warframe window")
+            return
         cv2.imshow("display_detection_area", ui_screenshot)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
     
     def display_icon_filter(self):
         ui_screenshot = self.wincap.get_screenshot()
+        if ui_screenshot is None: 
+            print("Error: Cannot find Warframe window")
+            return
         filtered_scan = self.icon_filter(ui_screenshot, self.icon_color, h_sens=4, s_sens=60, v_scale=0.6)
         cv2.imshow("display_icon_filter", filtered_scan)
         cv2.waitKey(0)
@@ -418,6 +366,9 @@ class ScreenScanner:
 
     def display_text_filter(self):
         ui_screenshot = self.wincap.get_screenshot()
+        if ui_screenshot is None: 
+            print("Error: Cannot find Warframe window")
+            return
         filtered_scan = self.text_hsv_filter(ui_screenshot, self.text_color)
         cv2.imshow("display_text_filter", filtered_scan)
         cv2.waitKey(0)
