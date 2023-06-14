@@ -69,8 +69,9 @@ class ScreenScanner:
 
         self.template_match_status_text = ''
 
-        self.previous_proc_trigger_timestamp_unix_s = 0
-        self.refresh_rate_s = 2
+        #self.previous_proc_trigger_timestamp_unix_s = 0
+        self.refresh_rate_s = main_window.scanner_refresh_rate_s
+        self.proc_validator = ProcValidator(main_window.duration_scale, self)
 
         self.affinity_proc_list = []
         self.sound_queue = deque([])
@@ -163,7 +164,7 @@ class ScreenScanner:
             #         print(detect_area > template_area*0.5 , detect_area < template_area*2 , wa>0.5*w , ha>0.5*h)
 
         (yCoords, xCoords) = np.where( (match_result > self.template_match_threshold) & (match_result <= 1) )
-        self.template_match_status_text = f'Max template match: {np.max(match_result[match_result<=1])*100:.1f}%'
+        self.template_match_status_text = f'Icon match: {np.max(match_result[match_result<=1])*100:.1f}%'
         # if len(yCoords)==0:
         #     print(f'Template match threshold of {self.template_match_threshold*100:.1f}% not satisfied by any elements. Max match found: {np.max(match_result[match_result<=1])*100:.1f}%')
 
@@ -236,7 +237,6 @@ class ScreenScanner:
                 for i in range(len(output['level'])):
                     proc_time = text2float(output['text'][i])
                     confident = (float(output['conf'][i]) >= 50)
-                    valid_width = True
 
                     if len(output['level'])>0 and output['text'][i] !='' and float(output['conf'][i]) > 0:
                         if j < len(self.main_window.image_label_list):
@@ -253,18 +253,34 @@ class ScreenScanner:
                                 #self.main_window.image_text_list.append(f'{proc_time:.1f}, Conf: {output["conf"][i]}')
                                 j+=1
 
+                    '''
                     if len(self.affinity_proc_list)>0:
                         valid_time = (proc_time > self.affinity_duration-25 and proc_time <= self.affinity_duration) and proc_time > ( self.affinity_proc_list[-1].get_expiry_unix_s() - screenshot_time_unix + 25 )
                     else:
                         valid_time = (proc_time > self.affinity_duration-25 and proc_time <= self.affinity_duration) #proc_time > self.affinity_duration-10 and #TODO
                     #print(f'confident: {confident}, valid time: {valid_time}')
+                    '''
+
+                    if confident:
+                        self.proc_validator.add_proc(proc_time)
+
+                    for proc in self.proc_validator.proc_list:
+                        # check if equal to 2, not greater so it only adds once
+                        if proc.name == "Affinity" and proc.validations >= 2 and proc.valid_time_restriction and not proc.active:
+                            proc.active = True
+                            self.affinity_proc_list.append( AffinityProc(proc.start_timestamp_unix_s, self.affinity_duration) )
+                            self.sound_queue.append('procs_active_%d.mp3'%(len(self.affinity_proc_list)))
+                            pd.DataFrame([{'smeeta_proc_unix_s':proc.start_timestamp_unix_s}]).to_csv(self.smeeta_history_file, mode='a', header=not os.path.isfile(self.smeeta_history_file), index=False)
+
+                    '''
                     if confident and valid_width and valid_time:
-                        self.previous_proc_trigger_timestamp_unix_s = proc_time+screenshot_time_unix-self.affinity_duration
+                        #self.previous_proc_trigger_timestamp_unix_s = proc_time+screenshot_time_unix-self.affinity_duration
                         self.affinity_proc_list.append( AffinityProc(proc_time+screenshot_time_unix-self.affinity_duration, self.affinity_duration) )
                         self.sound_queue.append('procs_active_%d.mp3'%(len(self.affinity_proc_list)))
                         date_string = datetime.datetime.fromtimestamp(int(screenshot_time_unix-(self.affinity_duration-proc_time))).strftime('%Y-%m-%d %H:%M:%S')
                         logging.info('Affinity proc detected at time: %s (%d). %d procs active'%(date_string, int(screenshot_time_unix-(self.affinity_duration-proc_time)), len(self.affinity_proc_list)))
                         pd.DataFrame([{'smeeta_proc_unix_s':screenshot_time_unix-(self.affinity_duration-proc_time)}]).to_csv(self.smeeta_history_file, mode='a', header=not os.path.isfile(self.smeeta_history_file), index=False)
+                    '''
 
     def get_next_expiry_unix(self):
         if len(self.affinity_proc_list)>0:
@@ -395,6 +411,75 @@ class AffinityProc():
     def set_pause_end_time(self, pause_end_unix):
         self.pause_end_time_unix_s = pause_end_unix
         # self.paused_time_s += pause_end_unix - self.pause_start_time_unix_s
+
+class ProcValidator():
+    def __init__(self, duration_scale, scanner) -> None:
+        self.scanner = scanner
+        self.proc_list = []
+        self.duration_scale = duration_scale
+        proc_dict = {'Affinity':120, 'Critical Chance':30, 'Energy Refund':10}
+        self.proc_durations = np.array([v for _,v in proc_dict.items()]) * duration_scale
+        self.proc_names = list(proc_dict)
+        self.last_proc_reference_timestamp_unix_s = 0
+    
+    def add_proc(self, duration_remaining):
+        current_timestamp_unix_s = time.time()
+        expiry_timestamp_unix_s = current_timestamp_unix_s + duration_remaining
+
+        max_validations = 0
+        max_validations_index = 0
+        is_duplicate = False
+        for i in reversed(range(len(self.proc_list))):
+            proc = self.proc_list[i]
+
+            if proc.expiry_timestamp_unix_s < current_timestamp_unix_s:
+                del self.proc_list[i]
+                #print(f'Deleting proc {i}')
+                continue
+
+            if proc.is_duplicate(expiry_timestamp_unix_s):
+                if proc.validations > max_validations:
+                    max_validations = proc.validations
+                    max_validations_index = i
+                is_duplicate = True
+                break
+        
+        if max_validations >= 3:
+            self.last_proc_reference_timestamp_unix_s = self.proc_list[max_validations_index].start_timestamp_unix_s
+
+        # new proc
+        if not is_duplicate:
+            abs_diff = abs(self.proc_durations - duration_remaining)
+            chosen_index = np.argmin(abs_diff)
+
+            # extra restictions for adding a new affinity proc
+            valid_time_restriction = True
+            if self.proc_names[chosen_index] == "Affinity":
+                valid_time_restriction = (duration_remaining > self.scanner.affinity_duration-25 and duration_remaining <= self.scanner.affinity_duration) 
+                if len(self.scanner.affinity_proc_list) > 0:
+                    valid_time_restriction = valid_time_restriction and duration_remaining > ( self.scanner.affinity_proc_list[-1].get_expiry_unix_s() - current_timestamp_unix_s + 25 )
+
+            self.proc_list.append(self.Proc(self.proc_names[chosen_index], self.proc_durations[chosen_index], duration_remaining, valid_time_restriction))
+
+    class Proc():
+        def __init__(self, name, base_duration, expiry_s, valid_time_restriction) -> None:
+            self.name = name
+            self.base_duration = base_duration
+            self.expiry_s = expiry_s
+            self.detection_timestamp_unix_s = time.time()
+            self.expiry_timestamp_unix_s = self.detection_timestamp_unix_s + expiry_s
+            self.start_timestamp_unix_s = self.expiry_timestamp_unix_s - base_duration
+            self.validations = 1
+            self.valid_time_restriction = valid_time_restriction
+            self.active = False
+
+        def is_duplicate(self, test_timestamp_unix_s):
+
+            if abs(test_timestamp_unix_s - self.expiry_timestamp_unix_s) < 0.2:
+                self.validations += 1
+                return True
+            
+            return False
 
 def get_bordered_image(img, x1,y1,x2,y2, border=10):
     yo,xo,_ = img.shape

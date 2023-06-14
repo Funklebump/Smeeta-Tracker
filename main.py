@@ -37,6 +37,7 @@ class MainWindow(QWidget):
         self.load_ui()
 
         self.affinity_proc_duration = 120 if self.ui.time_120_radio_button.isChecked() else 156
+        self.duration_scale = 1 if self.ui.time_120_radio_button.isChecked() else 1.3
         self.ui.time_120_radio_button.toggled.connect(self.update_settings)
         self.drop_chance_booster = 2 if self.ui.drop_chance_booster_checkbox.isChecked() else 1
         self.ui.drop_chance_booster_checkbox.stateChanged.connect(self.update_settings)
@@ -52,6 +53,7 @@ class MainWindow(QWidget):
         self.ui.ui_scale_combo.currentIndexChanged.connect(self.update_settings)
         self.template_match_threshold = self.ui.template_match_slider.value()/100
         self.ui.template_match_slider.sliderReleased.connect(self.update_settings)
+        self.scanner_refresh_rate_s = 0.5+2*self.ui.refresh_rate_slider.value()/100
 
         self.warframe_window_found=False
 
@@ -138,6 +140,7 @@ class MainWindow(QWidget):
 
     def update_settings(self):
         self.affinity_proc_duration = 120 if self.ui.time_120_radio_button.isChecked() else 156
+        self.duration_scale = 1 if self.ui.time_120_radio_button.isChecked() else 1.3
         self.drop_chance_booster = 2 if self.ui.drop_chance_booster_checkbox.isChecked() else 1
         self.drop_booster = 2 if self.ui.drop_booster_checkbox.isChecked() else 1
         self.drop_booster2 = 2 if self.ui.drop_booster_checkbox_2.isChecked() else 1
@@ -146,6 +149,7 @@ class MainWindow(QWidget):
 
         self.ui_scale = float(self.ui.ui_scale_combo.currentText())
         self.template_match_threshold = self.ui.template_match_slider.value()/100
+        self.scanner_refresh_rate_s = 0.5+2*self.ui.refresh_rate_slider.value()/100
 
         self.monitor.screen_scanner.update_ui_settings()
 
@@ -272,10 +276,12 @@ class MainWindow(QWidget):
 
     def update_template_match_condition(self):
         self.monitor.screen_scanner.template_match_threshold = self.ui.template_match_slider.value()/100
+        self.template_match_threshold = self.ui.template_match_slider.value()/100
         self.ui.template_match_label.setText("%d%%"%(self.ui.template_match_slider.value()))
 
     def update_scan_refresh_rate(self):
         self.monitor.screen_scanner.refresh_rate_s = 0.5+2*self.ui.refresh_rate_slider.value()/100
+        self.scanner_refresh_rate_s = 0.5+2*self.ui.refresh_rate_slider.value()/100
         self.ui.refresh_rate_label.setText(f'{self.monitor.screen_scanner.refresh_rate_s:.1f}s')
 
     def update_rgb_to_hsv_label(self):
@@ -423,7 +429,7 @@ class MainWindow(QWidget):
                 self.ui.extra_proc_chances_label.setText(f'-')
 
             if self.monitor.log_parser.in_mission and self.ui.charm_rotation_checkbox.isChecked(): 
-                ref_timestamp = max(self.monitor.log_parser.mission_start_timestamp_s+1, self.monitor.screen_scanner.previous_proc_trigger_timestamp_unix_s)
+                ref_timestamp = max(self.monitor.log_parser.mission_start_timestamp_unix_s+1, self.monitor.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s)
                 self.overlay.scan_label_group.add_text(f'Charm Rotation: {(27.4-(time.time() - (ref_timestamp))%27.4):.1f}s')
 
             # update ui labels

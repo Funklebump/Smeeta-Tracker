@@ -31,6 +31,7 @@ class EeLogParser:
 
         self.in_mission=False
         self.mission_start_timestamp_s = 0
+        self.mission_start_timestamp_unix_s = 0
         self.mission_end_timestamp_s = 0
         self.mission_duration_s=0
         self.drone_spawns = 0
@@ -48,6 +49,7 @@ class EeLogParser:
 
         self.in_mission=False
         self.mission_start_timestamp_s = 0
+        self.mission_start_timestamp_unix_s = 0
         self.mission_end_timestamp_s = 0
         self.mission_duration_s=0
         self.drone_spawns = 0
@@ -109,8 +111,10 @@ class EeLogParser:
                     self.drone_spawns-=1
                 # Check for mission start
                 elif "GameRulesImpl::StartRound()" in line or 'Game [Info]: OnStateStarted, mission type' in line:
+                    print(f'[{log_timestamp_s}]: Mission has started')
                     self.in_mission = True
                     self.mission_start_timestamp_s = log_timestamp_s
+                    self.mission_start_timestamp_unix_s = log_timestamp_s + self.game_start_time_unix_s
                     break
 
                 if "Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":" in line:
@@ -214,6 +218,7 @@ class EeLogParser:
                 if "GameRulesImpl::StartRound()" in line or 'Game [Info]: OnStateStarted, mission type' in line:
                     data.append({'log_time_s':log_time_s, 'drone_count':drone_count, 'enemy_count':enemy_count})
                     break
+                # mission end
                 elif 'Game [Info]: CommitInventoryChangesToDB' in line:
                     mission_end_time_s = self.game_start_time_unix_s + log_time_s
                 # check for agent creation / deletion

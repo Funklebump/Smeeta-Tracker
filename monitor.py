@@ -70,7 +70,8 @@ class Monitor():
                     playsound(sound_file, block=True)
                 else:
                     print("Sound file does not exist: ", sound_file)
-                self.screen_scanner.sound_queue.popleft()
+                if len(self.screen_scanner.sound_queue) > 0:
+                    self.screen_scanner.sound_queue.popleft()
             time.sleep(3)
         self.thread_list.pop()
     
@@ -113,7 +114,7 @@ class Monitor():
                 if next_affinity_expiry_unix:
                     time.sleep(min(1, (next_affinity_expiry_unix - time.time())%1))
                 else:
-                    ref_timestamp = max(self.log_parser.mission_start_timestamp_s+1, self.screen_scanner.previous_proc_trigger_timestamp_unix_s)
+                    ref_timestamp = max(self.log_parser.mission_start_timestamp_unix_s+1, self.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s)
                     charm_rotation = (27.4-(time.time() - (ref_timestamp))%27.4)
                     time.sleep(charm_rotation%1)
             print('monitor_game was set false! exiting overlay update thread')
