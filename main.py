@@ -501,11 +501,6 @@ class MainWindow(QWidget):
             if self.ui.display_tmatch_checkbox.isChecked():
                 self.overlay.scan_label_group.add_text(self.monitor.screen_scanner.template_match_status_text)
 
-        if self.warframe_window_found:
-            self.ui.window_capture_status_label.setText("Warframe window found!")
-        else:
-            self.ui.window_capture_status_label.setText("Warframe window not found...")
-
     def add_detection_info(self, image, image_text):
         if len(self.image_list) < self.max_entities:
             self.image_list.append(image)
