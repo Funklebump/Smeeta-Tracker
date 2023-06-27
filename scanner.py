@@ -362,6 +362,7 @@ class ScreenScanner:
             return hsv_filter(screenshot, color, h_sens=4, s_sens=60, v_scale=0.6)
 
     def display_detection_area(self):
+        ui_screenshot = None
         ui_screenshot = self.wincap.get_screenshot()
         if ui_screenshot is None: 
             print("Error: Cannot find Warframe window")

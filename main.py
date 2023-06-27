@@ -23,6 +23,8 @@ import requests
 import subprocess
 import inspect
 from PySide6.QtWidgets import QComboBox, QCheckBox, QRadioButton, QSpinBox, QSlider
+from pynput import keyboard
+import pickle
  
 SMEETA_ICON_COLOR_TYPE = 'SMEETA_ICON_COLOR_TYPE'
 TEXT_COLOR_TYPE = 'TEXT_COLOR_TYPE'
@@ -56,6 +58,7 @@ class MainWindow(QWidget):
         self.scanner_refresh_rate_s = 0.5+2*self.ui.refresh_rate_slider.value()/100
 
         self.warframe_window_found=False
+        self.smeeta_rotation_override_unix = 0
 
         self.image_label_list = [self.ui.image_label_1,self.ui.image_label_2,self.ui.image_label_3,self.ui.image_label_4,self.ui.image_label_5]
         self.label_image_label_list = [self.ui.label_image_label_1,self.ui.label_image_label_2,self.ui.label_image_label_3,self.ui.label_image_label_4,self.ui.label_image_label_5]
@@ -80,6 +83,7 @@ class MainWindow(QWidget):
         app.aboutToQuit.connect(self.closeEvent)
 
         self.ui.update_button.clicked.connect(self.spawn_updater_and_die)
+        self.ui.override_hotkey_button.clicked.connect(self.hotkey_next_keypress)
 
         self.ui.start_button.clicked.connect(self.monitor.start_scanning)
         self.ui.stop_button.clicked.connect(self.monitor.stop_scanning)
@@ -138,6 +142,44 @@ class MainWindow(QWidget):
         self.update_scan_refresh_rate()
         os.system('cls')
 
+        # load hotkey
+        self.hotkey = keyboard.KeyCode.from_char('k')
+        hotkey_file = os.path.join(self.script_folder, 'hotkey.pkl')
+        if os.path.isfile(hotkey_file):
+            self.load_hotkey()
+        self.save_next_hotkey = False
+        self.ui.hotkey_label.setText(self.hotkey.char)
+
+        listener = keyboard.Listener(on_press=self.on_press)
+        listener.start()
+    
+    def on_press(self, key):
+        try:
+            if self.save_next_hotkey:
+                self.save_hotkey(key)
+                self.save_next_hotkey = False
+                return
+            if key.char == self.hotkey.char:
+                print(f'Key {key.char} was pressed, resetting charm rotation')
+                self.smeeta_rotation_override_unix = time.time()
+                self.on_data_ready()
+        except AttributeError:
+            pass
+
+    def load_hotkey(self):
+        with open(os.path.join(self.script_folder, 'hotkey.pkl'), 'rb') as f:
+            self.hotkey = pickle.load(f)
+        self.ui.hotkey_label.setText(self.hotkey.char)
+
+    def save_hotkey(self, key):
+        with open(os.path.join(self.script_folder, 'hotkey.pkl'), 'wb') as outfile:
+            pickle.dump(key, outfile)
+        self.hotkey = key
+        self.ui.hotkey_label.setText(self.hotkey.char)
+    
+    def hotkey_next_keypress(self):
+        self.save_next_hotkey = True
+        
     def update_settings(self):
         self.affinity_proc_duration = 120 if self.ui.time_120_radio_button.isChecked() else 156
         self.duration_scale = 1 if self.ui.time_120_radio_button.isChecked() else 1.3
@@ -429,7 +471,7 @@ class MainWindow(QWidget):
                 self.ui.extra_proc_chances_label.setText(f'-')
 
             if self.monitor.log_parser.in_mission and self.ui.charm_rotation_checkbox.isChecked(): 
-                ref_timestamp = max(self.monitor.log_parser.mission_start_timestamp_unix_s+1, self.monitor.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s)
+                ref_timestamp = max(self.monitor.log_parser.mission_start_timestamp_unix_s+1, self.monitor.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s, self.smeeta_rotation_override_unix)
                 self.overlay.scan_label_group.add_text(f'Charm Rotation: {(27.4-(time.time() - (ref_timestamp))%27.4):.1f}s')
 
             # update ui labels

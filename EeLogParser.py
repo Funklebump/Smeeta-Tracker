@@ -81,7 +81,7 @@ class EeLogParser:
                     continue
 
                 log_timestamp_s = self.get_log_timestamp_s(line)
-                if not log_timestamp_s:
+                if log_timestamp_s is None:
                     continue
                 if line_index == 1:
                     self.latest_log_timestamp_s = log_timestamp_s

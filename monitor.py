@@ -92,6 +92,7 @@ class Monitor():
         update_gui = QtCore.Signal(object)
         def __init__(self, parent, screen_scanner, log_parser, monitor_game) -> None:
             QtCore.QThread.__init__(self, parent)
+            self.parent = parent
             self.screen_scanner = screen_scanner
             self.monitor_game = monitor_game
             self.log_parser = log_parser
@@ -114,7 +115,7 @@ class Monitor():
                 if next_affinity_expiry_unix:
                     time.sleep(min(1, (next_affinity_expiry_unix - time.time())%1))
                 else:
-                    ref_timestamp = max(self.log_parser.mission_start_timestamp_unix_s+1, self.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s)
+                    ref_timestamp = max(self.log_parser.mission_start_timestamp_unix_s+1, self.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s, self.parent.smeeta_rotation_override_unix)
                     charm_rotation = (27.4-(time.time() - (ref_timestamp))%27.4)
                     time.sleep(charm_rotation%1)
             print('monitor_game was set false! exiting overlay update thread')

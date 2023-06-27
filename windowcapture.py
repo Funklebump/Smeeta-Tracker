@@ -1,6 +1,7 @@
 import numpy as np
 import win32api, win32con, win32gui, win32ui
 from win32api import GetSystemMetrics
+from ctypes import windll
 
 class WindowCapture:
     hwnd = None
@@ -13,7 +14,7 @@ class WindowCapture:
         self.window_name = window_name
         # find the handle for the window we want to capture
         self.hwnd = win32gui.FindWindow(None, self.window_name)
-        self.w, self.h = capture_size
+        self.cap_w, self.cap_h = capture_size
         if not self.hwnd:
             #raise Exception('Window not found: {}'.format(window_name))
             print('Window not found: {}'.format(window_name))
@@ -30,7 +31,7 @@ class WindowCapture:
             else:
                 return None
         try:
-            rect = win32gui.GetWindowRect(self.hwnd)
+            left, top, right, bot = win32gui.GetWindowRect(self.hwnd)
         except:
             self.window.warframe_window_found = False
             self.hwnd = win32gui.FindWindow(None, self.window_name)
@@ -38,12 +39,13 @@ class WindowCapture:
                 self.window.warframe_window_found = True
 
             return None
-        win_w = rect[2] - rect[0]
+        win_w = right - left
+        win_h = bot - top
         # y_border_thickness = GetSystemMetrics(33) + GetSystemMetrics(4)
         y_border_thickness = 0
 
         #Upper left corner of detection box, given top left of screen is 0,0
-        self.cropped_x, self.cropped_y  = ( int(win_w - self.w ) , int(y_border_thickness) )
+        self.cropped_x, self.cropped_y  = ( int(win_w - self.cap_w ) , int(y_border_thickness) )
 
         # get the window image data
         try:
@@ -54,15 +56,18 @@ class WindowCapture:
         dcObj = win32ui.CreateDCFromHandle(wDC)
         cDC = dcObj.CreateCompatibleDC()
         dataBitMap = win32ui.CreateBitmap()
-        dataBitMap.CreateCompatibleBitmap(dcObj, self.w, self.h)
+        dataBitMap.CreateCompatibleBitmap(dcObj, win_w, win_h)
         cDC.SelectObject(dataBitMap)
-        cDC.BitBlt((0, 0), (self.w, self.h), dcObj, (self.cropped_x, self.cropped_y), win32con.SRCCOPY)
+        result = windll.user32.PrintWindow(self.hwnd, cDC.GetSafeHdc(), 2)
+
+        bmpinfo = dataBitMap.GetInfo()
 
         # convert the raw data into a format opencv can read
         #dataBitMap.SaveBitmapFile(cDC, 'debug.bmp')
         signedIntsArray = dataBitMap.GetBitmapBits(True)
         img = np.fromstring(signedIntsArray, dtype='uint8')
-        img.shape = (self.h, self.w, 4)
+        img.shape = (bmpinfo['bmHeight'], bmpinfo['bmWidth'], 4)
+        img = img[self.cropped_y:self.cropped_y+self.cap_h, self.cropped_x:, :]
 
         # free resources
         dcObj.DeleteDC()

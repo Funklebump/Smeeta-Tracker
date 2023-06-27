@@ -1208,6 +1208,32 @@
         <string>2s</string>
        </property>
       </widget>
+      <widget class="QPushButton" name="override_hotkey_button">
+       <property name="geometry">
+        <rect>
+         <x>130</x>
+         <y>210</y>
+         <width>121</width>
+         <height>21</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Set Override Hotkey</string>
+       </property>
+      </widget>
+      <widget class="QLabel" name="hotkey_label">
+       <property name="geometry">
+        <rect>
+         <x>260</x>
+         <y>210</y>
+         <width>47</width>
+         <height>21</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
      </widget>
      <widget class="QWidget" name="tab_6">
       <attribute name="title">
