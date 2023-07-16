@@ -27,7 +27,8 @@ class Monitor():
         self.log_parser.reset()
         self.screen_scanner = ScreenScanner(self.parent_window)
         self.monitor_game = True
-        self.parent_window.disable_setting_buttons()
+        for elem in self.parent_window.ui_elements:
+            elem.setEnabled(False)
 
         if self.parent_window.ui.enable_affinity_scanner_checkbox.isChecked():
             sst = self.ScreenScannerThread(self.parent_window, self.screen_scanner, self.monitor_game)
@@ -45,7 +46,6 @@ class Monitor():
             x3 = threading.Thread(target=self.sound_thread, daemon=True )
             x3.start()
             self.thread_list.append(x3)
-            
 
     def stop_scanning(self):
         for th in self.qthread_list:
@@ -55,12 +55,14 @@ class Monitor():
         thread_monitor.start()
         thread_monitor.join()
 
+        for elem in self.parent_window.ui_elements:
+            elem.setEnabled(True)
+
     def monitor_threads(self):
         while len(self.thread_list) > 0 and len(self.qthread_list)>0:
             time.sleep(1)
         self.parent_window.overlay.scan_label_group.reset_text()
         self.parent_window.overlay.log_label_group.reset_text()
-        self.parent_window.enable_setting_buttons()
 
     def sound_thread(self):
         while self.monitor_game:
@@ -72,7 +74,7 @@ class Monitor():
                     print("Sound file does not exist: ", sound_file)
                 if len(self.screen_scanner.sound_queue) > 0:
                     self.screen_scanner.sound_queue.popleft()
-            time.sleep(3)
+            time.sleep(1)
         self.thread_list.pop()
     
     class ScreenScannerThread(QtCore.QThread):
@@ -81,16 +83,16 @@ class Monitor():
             QtCore.QThread.__init__(self, parent)
             self.screen_scanner = screen_scanner
             self.monitor_game = monitor_game
+            self.window = parent
 
         def run(self):
             while(self.monitor_game):
-                self.screen_scanner.scan_match_template()
-                #self.update_gui.emit(0)
-                time.sleep(self.screen_scanner.refresh_rate_s)          
+                self.screen_scanner.find_charm_proc()
+                time.sleep(self.window.window_data.scanner_refresh_rate_s)          
 
     class UpdateOverlayThread(QtCore.QThread):
         update_gui = QtCore.Signal(object)
-        def __init__(self, parent, screen_scanner, log_parser, monitor_game) -> None:
+        def __init__(self, parent, screen_scanner:ScreenScanner, log_parser:EeLogParser, monitor_game:bool) -> None:
             QtCore.QThread.__init__(self, parent)
             self.parent = parent
             self.screen_scanner = screen_scanner
@@ -104,7 +106,7 @@ class Monitor():
                 ee_log_size = os.stat(self.log_parser.ee_log_path).st_size
                 if ee_log_size > self.ee_log_size:
                     try:
-                        self.log_parser.parse_file()
+                        self.log_parser.parse_latest_logs()
                         self.ee_log_size = ee_log_size
                     except Exception as e:
                         print(f'Failed to read ee log: {e}')
@@ -115,7 +117,7 @@ class Monitor():
                 if next_affinity_expiry_unix:
                     time.sleep(min(1, (next_affinity_expiry_unix - time.time())%1))
                 else:
-                    ref_timestamp = max(self.log_parser.mission_start_timestamp_unix_s+1, self.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s, self.parent.smeeta_rotation_override_unix)
+                    ref_timestamp = max(self.log_parser.mission_start_timestamp_unix_s+1, self.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s, self.parent.hotkey.smeeta_rotation_override_unix)
                     charm_rotation = (27.4-(time.time() - (ref_timestamp))%27.4)
                     time.sleep(charm_rotation%1)
             print('monitor_game was set false! exiting overlay update thread')
