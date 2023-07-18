@@ -13,6 +13,7 @@ class WindowCapture:
         self.window_name = window_name
         # find the handle for the window we want to capture
         self.cap_w, self.cap_h = capture_size
+        self.hwnd = None
         self.find_window()
 
     def find_window(self):
@@ -24,7 +25,9 @@ class WindowCapture:
     
     def is_window(self):
         if not self.hwnd or not win32gui.IsWindow(self.hwnd):
+            print(f'Window called "{self.window_name}" not found.')
             return False
+        return True
 
     def get_screenshot(self):
         # check if window handle is still valid

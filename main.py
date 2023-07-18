@@ -25,7 +25,13 @@ import pandas as pd
 import logging
 import numpy as np
 import scanner
- 
+import matplotlib
+matplotlib.use('Qt5Agg')
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
+import seaborn as sns
+from scanner import ProcValidator
+
 version_link = "https://raw.github.com/A-DYB/smeeta-tracker-2/main/version.json"
 
 logger = logging.getLogger('smeeta')
@@ -58,12 +64,14 @@ class MainWindow(QWidget):
 
 
         user32 = ctypes.windll.user32
-        self.screen_capture = WindowCapture('Warframe', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
-        self.overlay = Overlay()
+        self.screen_capture:WindowCapture = WindowCapture('Warframe', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
+        self.overlay:Overlay = Overlay()
         self.overlay.show()
-        self.window_data = WindowData(self.ui)
-        self.monitor = Monitor(self)
-        self.hotkey = Hotkey(self)
+        self.window_data:WindowData = WindowData(self.ui)
+        self.monitor:Monitor = Monitor(self)
+        self.hotkey:Hotkey = Hotkey(self)
+        self.charm_history:CharmHistory = CharmHistory(self)
+        self.update_charm_history_labels()
 
         self.check_for_updates()
 
@@ -92,7 +100,7 @@ class MainWindow(QWidget):
         self.ui.text_color_widget.clicked.connect(lambda : self.select_color(self.ui.text_color_widget))
         self.ui.overlay_text_size_slider.valueChanged.connect(lambda : self.overlay.set_text_size(13*(1+self.ui.overlay_text_size_slider.value()/100)))
 
-        self.ui.analyze_ee_log_button.clicked.connect(self.monitor.log_parser.plot_logs)
+        self.ui.analyze_ee_log_button.clicked.connect(self.plot_logs)
         self.ui.test_bounds_button.clicked.connect(self.display_detection_area)
         self.ui.test_icon_threshold_button.clicked.connect(self.display_icon_filter)
         self.ui.test_text_threshold_button.clicked.connect(self.display_text_filter)
@@ -135,9 +143,9 @@ class MainWindow(QWidget):
         if not os.path.isfile(os.path.join(self.script_folder,"solNodes.json")):
             os.rename(os.path.join(self.script_folder,'base_solNodes.json'),os.path.join(self.script_folder,'solNodes.json'))
 
-        if not os.path.isfile(os.path.join(self.script_folder,'charm_history.csv')):
-            df = pd.DataFrame([], columns=["smeeta_proc_unix_s", "mission_start_unix_s"])
-            df.to_csv(os.path.join(self.script_folder,'charm_history.csv'), header=True, index=False)
+        # if not os.path.isfile(os.path.join(self.script_folder,'charm_history.csv')):
+        #     df = pd.DataFrame([], columns=["smeeta_proc_unix_s", "mission_start_unix_s"])
+        #     df.to_csv(os.path.join(self.script_folder,'charm_history.csv'), header=True, index=False)
 
     def closeEvent(self, arg):
         self.guisave(QtCore.QSettings(os.path.join(self.script_folder, 'saved_settings.ini'), QtCore.QSettings.IniFormat))
@@ -268,7 +276,7 @@ class MainWindow(QWidget):
         for i in range(len(self.image_label_list)):
             if i < len(self.window_data.scan_display_data.image_list):
                 self.image_label_list[i].setPixmap(self.window_data.scan_display_data.image_list[i])
-                self.label_image_label_list[i].setText(self.window_data.scan_display_data.image_text_list[i])
+                self.label_image_label_list[i].setText(self.window_data.scan_display_data.text_list[i])
             else:
                 self.image_label_list[i].clear()
                 self.label_image_label_list[i].setText("")
@@ -302,7 +310,10 @@ class MainWindow(QWidget):
         # update ui labels
         self.ui.drone_spawns_label.setText(str(self.monitor.log_parser.drone_spawns))
         self.ui.total_spawns_label.setText(str(self.monitor.log_parser.enemy_spawns))
-        self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=int(self.monitor.log_parser.mission_duration_s))))
+        if not self.monitor.log_parser.in_mission:
+            self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=int(self.monitor.log_parser.mission_duration_s))))
+        else:
+            self.ui.mission_time_label.setText(str(datetime.timedelta(seconds=int(time.time() - self.monitor.log_parser.mission_start_timestamp_unix_s))))
 
         if self.monitor.log_parser.mission_duration_s>0:
             self.ui.drone_kpm_label.setText('%.2f, %.2f'%(self.monitor.log_parser.drone_spawns/(self.monitor.log_parser.mission_duration_s/60), self.monitor.log_parser.drone_spawns/(self.monitor.log_parser.mission_duration_s/3600)))
@@ -325,6 +336,16 @@ class MainWindow(QWidget):
 
         if self.ui.display_tmatch_checkbox.isChecked():
             self.overlay.scan_label_group.add_text(self.monitor.screen_scanner.template_match_status_text)
+
+        self.update_charm_history_labels()
+
+    def update_charm_history_labels(self):
+        if self.charm_history.update:
+            self.charm_history.update = False
+            self.ui.affinity_count_label.setText(f'{self.charm_history.total_affinity_procs} ({self.charm_history.affinity_chance*100:.2f}%)')
+            self.ui.critical_count_label.setText(f'{self.charm_history.total_critical_chance_procs} ({self.charm_history.critical_chance*100:.2f}%)')
+            self.ui.energy_count_label.setText(f'{self.charm_history.total_energy_refund_procs} ({self.charm_history.energy_chance*100:.2f}%)')
+            self.ui.total_mission_time_label.setText(f'{self.charm_history.total_mission_time/60:.0f} mins')
     
     def display_detection_area(self):
         if not self.monitor.screen_scanner.screen_capture.is_window():
@@ -348,6 +369,10 @@ class MainWindow(QWidget):
         filtered_scan = self.monitor.screen_scanner.text_hsv_filter(img, self.ui.text_color_widget.color_hsv)
         self.paint = PaintPicture(self)
         self.paint.show_image(filtered_scan, None)
+
+    def plot_logs(self):
+        self.paint = PaintPicture(self)
+        self.paint.plot_logs(self)
 
 class WindowData():
     def __init__(self, ui) -> None:
@@ -390,6 +415,82 @@ class WindowData():
                 self.image_index += 1
                 if self.image_index > self.max_images-1:
                     self.image_index=0
+
+class CharmHistory():
+    def __init__(self, main_window:MainWindow) -> None:
+        self.main_window = main_window
+        self.total_affinity_procs = 0
+        self.total_critical_chance_procs = 0
+        self.total_energy_refund_procs = 0
+
+        self.total_chances = 1
+
+        self.affinity_chance = 0
+        self.critical_chance = 0
+        self.energy_chance = 0
+        
+        self.total_mission_time = 0
+
+        self.ref_mission_start_unix_s = 0 #
+        self.ref_mission_time_s = 0 #
+        self.update = True
+
+        self.load_history()
+
+    def load_history(self):
+        charm_history_file = os.path.join(self.main_window.script_folder, "charm_history.csv")
+        if not os.path.isfile(charm_history_file):
+            return
+        df = pd.read_csv(charm_history_file)
+        df['start_time_s'] = df['proc_start_timestamp_unix_s'] - df['mission_start_timestamp_unix_s']
+        for start_time in df.mission_start_timestamp_unix_s.unique():
+            df_f = df[(df.mission_start_timestamp_unix_s == start_time)]
+            mission_duration_s = df_f['start_time_s'].max()
+            self.total_mission_time += mission_duration_s
+
+        self.ref_mission_start_unix_s = df.mission_start_timestamp_unix_s.max()
+        df_f = df[(df.mission_start_timestamp_unix_s == self.ref_mission_start_unix_s)]
+        self.ref_mission_time_s = df_f.proc_start_timestamp_unix_s.max()
+
+        value_counts = df['name'].value_counts()
+        if 'Affinity' in value_counts:
+            self.total_affinity_procs = value_counts['Affinity']
+        if 'Critical Chance' in value_counts:
+            self.total_critical_chance_procs = value_counts['Critical Chance']
+        if 'Energy Refund' in value_counts:
+            self.total_energy_refund_procs = value_counts['Energy Refund']
+
+        self.total_chances = max(1, self.total_mission_time // 27)
+
+        self.affinity_chance = self.total_affinity_procs/self.total_chances
+        self.critical_chance = self.total_critical_chance_procs/self.total_chances
+        self.energy_chance = self.total_energy_refund_procs/self.total_chances
+        self.update = True
+
+    def new_proc(self, proc:ProcValidator.Proc):
+        if proc.name == "Affinity":
+            self.total_affinity_procs += 1
+        elif proc.name == "Critical Chance":
+            self.total_critical_chance_procs += 1
+        elif proc.name == "Energy Refund":
+            self.total_energy_refund_procs += 1
+
+        if proc.mission_start_timestamp_unix_s != self.ref_mission_start_unix_s:
+            self.ref_mission_start_unix_s = proc.mission_start_timestamp_unix_s
+            ref_mission_time_s = (proc.start_timestamp_unix_s - proc.mission_start_timestamp_unix_s)
+            self.total_mission_time += ref_mission_time_s
+            self.ref_mission_time_s = ref_mission_time_s
+        else:
+            new_ref_mission_time_s = (proc.start_timestamp_unix_s - proc.mission_start_timestamp_unix_s)
+            self.total_mission_time -= self.ref_mission_time_s
+            self.total_mission_time += new_ref_mission_time_s
+
+        self.total_chances = max(1, self.total_mission_time // 27)
+
+        self.affinity_chance = self.total_affinity_procs/self.total_chances
+        self.critical_chance = self.total_critical_chance_procs/self.total_chances
+        self.energy_chance = self.total_energy_refund_procs/self.total_chances
+        self.update = True
 
 class Hotkey():
     def __init__(self, main_window) -> None:
@@ -436,6 +537,7 @@ class Hotkey():
 class Overlay(QtWidgets.QDialog):
     def __init__(self):
         super(Overlay, self).__init__()
+        self.setWindowIcon(QtGui.QIcon(':/icons/charm.png'))
 
         self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
@@ -513,8 +615,68 @@ class PaintPicture(QtWidgets.QDialog):
 
         if self.obj is not None and y < self.image_hsv.shape[0] and x < self.image_hsv.shape[1]:
             self.obj.set_color(self.image_hsv[y,x])
+            self.obj = None
             self.accept()
         return super().mousePressEvent(event)
+    
+    def plot_logs(self, main_window:MainWindow):
+        self.sc = MplCanvas(self, width=7, height=7, dpi=100)
+
+        df = main_window.monitor.log_parser.parse_arbitration_logs()
+        if df is None:
+            print(f'No mission data')
+            return
+
+        sns.lineplot(data=df, x='mission_time_minutes', y='drones_per_hour', ax=self.sc.axs[3], errorbar=None)
+        sns.lineplot(data=df, x='mission_time_minutes', y='drones_per_enemy', ax=self.sc.axs[1], errorbar=None)
+        sns.lineplot(data=df, x='mission_time_minutes', y='enemy_count', ax=self.sc.axs[0], errorbar=None)
+        sns.lineplot(data=df, x='mission_time_minutes', y='drone_count', ax=self.sc.axs[2], errorbar=None)
+
+        self.sc.axs[0].set_title('Enemy spawns')
+        self.sc.axs[2].set_title('Drone spawns')
+        self.sc.axs[1].set_title('Drones per enemy')
+        self.sc.axs[3].set_title('Drones per hour')
+
+        df.sort_values(by='mission_time_minutes', inplace=True)
+        vitus_chance = main_window.monitor.log_parser.get_vitus_essence_chance()
+        df['boost'] = np.array([vitus_chance]*len(df.index))
+        df['drone_count_diff'] = np.diff(df.drone_count.to_numpy(), prepend=0)
+
+        charm_history_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'charm_history.csv')
+        if os.path.isfile(charm_history_file):
+            df_s = pd.read_csv(charm_history_file)
+            if not df_s.empty:
+                smeeta_proc_timestamps_unix_s = df_s['smeeta_proc_unix_s'].to_numpy()
+
+                mission_start_time_unix_s = df.timestamp_unix_s.min()
+                mission_end_time_unix_s = df.timestamp_unix_s.max()
+                mission_smeeta_proc_timestamps_unix_s = smeeta_proc_timestamps_unix_s[np.where((smeeta_proc_timestamps_unix_s>mission_start_time_unix_s) & (smeeta_proc_timestamps_unix_s < mission_end_time_unix_s))]
+                for smeeta_proc_timestamp in mission_smeeta_proc_timestamps_unix_s:
+                    self.sc.axs[2].axvspan((smeeta_proc_timestamp - mission_start_time_unix_s)/60, (smeeta_proc_timestamp - mission_start_time_unix_s + main_window.window_data.affinity_proc_duration)/60, alpha=0.5, color='green')
+                    df.loc[ (df.timestamp_unix_s > smeeta_proc_timestamp) & (df.timestamp_unix_s < smeeta_proc_timestamp + main_window.window_data.affinity_proc_duration), 'boost'] *= 2
+                self.sc.axs[2].legend(['Smeeta proc'])
+
+        total_vitus_essence = np.sum( np.multiply( df.boost.to_numpy(), df.drone_count_diff.to_numpy() ) )
+
+        # get last mission
+        mission_info_str = main_window.monitor.log_parser.get_node_info_string(main_window.monitor.log_parser.recently_played_mission)
+
+        self.sc.fig.suptitle(f'{mission_info_str}\nDrones: {df.drone_count.max()}\nAvg VE Drops: {total_vitus_essence:.0f}; Avg Boost: {total_vitus_essence/(max(1,df.drone_count.max())*0.06):.2f}')
+        self.sc.fig.tight_layout()
+        
+        layout = self.layout()
+        layout.addWidget(self.sc)
+        self.show()
+
+class MplCanvas(FigureCanvasQTAgg):
+    def __init__(self, parent=None, width=5, height=4, dpi=100):
+        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        self.fig.add_subplot(221)
+        self.fig.add_subplot(222)
+        self.fig.add_subplot(223)
+        self.fig.add_subplot(224)
+        self.axs = self.fig.axes
+        super(MplCanvas, self).__init__(self.fig)
 
 class StickyDoubleSpinBox(QDoubleSpinBox):
     def __init__(self, parent=None, *args):

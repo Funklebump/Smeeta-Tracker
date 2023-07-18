@@ -107,6 +107,7 @@ class EeLogParser:
                     self.drones_per_hour = 0
                 # Check if drone has spawned
                 elif are_elems_in_line(constants.DRONE_AGENT_CREATED_TEXT, line):
+                    print(line)
                     self.drone_spawns += 1
                 # Check if enemy has spawned
                 elif are_elems_in_line(constants.AGENT_CREATED_TEXT, line) and not are_elems_in_line(constants.INVALID_AGENT_CREATED_TEXT, line):
@@ -121,6 +122,7 @@ class EeLogParser:
                         self.in_mission = True
                     self.mission_start_timestamp_s = log_timestamp_s
                     self.mission_start_timestamp_unix_s = log_timestamp_s + self.game_start_time_unix_s
+                    break
                 # check for mission start name
                 elif are_elems_in_line(constants.MISSION_NAME_TEXT, line):
                     recently_played_mission = self.parse_node_string(line)
@@ -134,7 +136,6 @@ class EeLogParser:
                         self.current_arbitration = current_arbitration
 
         self.previous_log_timestamp_s = self.latest_log_timestamp_s
-
         self.mission_duration_s = self.latest_log_timestamp_s - self.mission_start_timestamp_s  if self.in_mission else self.mission_end_timestamp_s - self.mission_start_timestamp_s
         self.drones_per_hour = 3600*self.drone_spawns/(max(1, self.mission_duration_s))
 
@@ -190,7 +191,8 @@ class EeLogParser:
         df['drone_count_diff'] = np.diff(df.drone_count.to_numpy(), prepend=0)
 
         df_s = pd.read_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'smeeta_history.csv'))
-        smeeta_proc_timestamps_unix_s = df_s['smeeta_proc_unix_s'].to_numpy()
+        df_s_filt = df_s[(df_s.name == "Affinity")]
+        smeeta_proc_timestamps_unix_s = df_s_filt['proc_start_timestamp_unix_s'].to_numpy()
 
         mission_start_time_unix_s = df.timestamp_unix_s.min()
         mission_end_time_unix_s = df.timestamp_unix_s.max()

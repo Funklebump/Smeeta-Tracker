@@ -6,4 +6,4 @@ AGENT_CREATED_TEXT = ['OnAgentCreated']
 INVALID_AGENT_CREATED_TEXT = ['OnAgentCreated /Npc/AutoTurretAgentShipRemaster']
 
 MISSION_NAME_TEXT = ["Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":"]
-NEW_ARBITRATION_NAME_TEXT = ["Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":"]
+NEW_ARBITRATION_NAME_TEXT = ["Script [Info]: Background.lua: EliteAlertMission at "]

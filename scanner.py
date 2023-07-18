@@ -66,7 +66,7 @@ class ScreenScanner:
     def template_match(self, screenshot, plot=False):
         icon_color = self.main_window.ui.smeeta_icon_widget.color_hsv
 
-        template = self.affinity_proc_template
+        template = self.affinity_proc_template[:, :, 0]
         h,w = template.shape
 
         filtered_scan = hsv_filter(screenshot, icon_color, h_sens=4, s_sens=60, v_scale=0.6)
@@ -127,6 +127,7 @@ class ScreenScanner:
 
     def find_charm_proc(self):
         text_color = self.main_window.ui.text_color_widget.color_hsv
+        ui_scale = self.main_window.window_data.ui_scale
         # update existing procs
         if len(self.affinity_proc_list) > 0:
             current_time_unix = time.time()
@@ -146,7 +147,7 @@ class ScreenScanner:
             print("Error: Cannot find Warframe window")
             return
         w, h, _ = ui_screenshot.shape
-        screenshot_time_unix = time.time()
+        screenshot_unix = time.time()
 
         # get locations of template matches
         locs, wt, ht = self.template_match(ui_screenshot)
@@ -161,7 +162,7 @@ class ScreenScanner:
                 xn,yn = locs[i][0],locs[i][1]
                 rotated_coords= np.matmul( self.M[:,:-1],np.array([[xn],[yn]]) ).astype(int)
                 xr,yr = *rotated_coords[0], *rotated_coords[1]
-                x1,y1,x2,y2 = (int(xr-15*self.ui_scale), int(yr+ht+3*self.ui_scale), int(xr+wt+15.5*self.ui_scale), int(yr+ht+25.5*self.ui_scale))
+                x1,y1,x2,y2 = (int(xr-15*ui_scale), int(yr+ht+3*ui_scale), int(xr+wt+15.5*ui_scale), int(yr+ht+25.5*ui_scale))
                 y0,x0=np.shape(rotated_filtered_scan)
                 if y1>y0 or y2>y0 or x1>x0 or x2>x0:
                     #print("Rotated coordinates out of bounds of image")
@@ -183,7 +184,7 @@ class ScreenScanner:
             
             if stitched is not None and stitched.shape[0]!=0 and stitched.shape[1]!=0:
                 # scale up stitched image
-                scaled_rotated_filtered_scan = cv2.resize(stitched, None,  fx = max(1, int(5/self.ui_scale)), fy = max(1,int(5/self.ui_scale)), interpolation = cv2.INTER_LANCZOS4)
+                scaled_rotated_filtered_scan = cv2.resize(stitched, None,  fx = max(1, int(5/ui_scale)), fy = max(1,int(5/ui_scale)), interpolation = cv2.INTER_LANCZOS4)
 
                 blur = cv2.GaussianBlur(scaled_rotated_filtered_scan,(3,3),0)
                 blur = cv2.threshold(blur, 10, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
@@ -195,7 +196,7 @@ class ScreenScanner:
                     confident = (float(output['conf'][i]) >= 50)
 
                     if len(output['level'])>0 and output['text'][i] !='' and float(output['conf'][i]) > 0:
-                        if j < len(self.main_window.window_data.scan_display_data.image_label_list):
+                        if j < self.main_window.window_data.scan_display_data.max_images:
                             (xd, yd, wd, hd) = (output['left'][i], output['top'][i], output['width'][i], output['height'][i])
                             if wd>0 and hd>0:
                                 # create 3 channel image to display colored rectangle
@@ -208,17 +209,7 @@ class ScreenScanner:
                                 j+=1
 
                     if confident:
-                        self.proc_validator.add_proc(proc_time)
-
-                    for proc in self.proc_validator.proc_list:
-                        # check if equal to 2, not greater so it only adds once
-                        if proc.name == "Affinity" and proc.validations >= 2 and proc.valid_time_restriction and not proc.active:
-                            affinity_duration = self.main_window.window_data.affinity_proc_duration
-                            proc.active = True
-                            self.affinity_proc_list.append( AffinityProc(proc.start_timestamp_unix_s, affinity_duration) )
-                            self.sound_queue.append('procs_active_%d.mp3'%(len(self.affinity_proc_list)))
-                            data = {"smeeta_proc_unix_s":proc.start_timestamp_unix_s, "mission_start_unix_s": self.main_window.monitor.log_parser.mission_start_timestamp_unix_s}
-                            pd.DataFrame([data]).to_csv(self.smeeta_history_file, mode='a', header=not os.path.isfile(self.smeeta_history_file), index=False)
+                        self.proc_validator.process_detection(proc_time, screenshot_unix)              
 
     def get_next_expiry_unix(self):
         if len(self.affinity_proc_list)>0:
@@ -235,7 +226,7 @@ class AffinityProc():
         return expiry_unix_s
 
 class ProcValidator():
-    def __init__(self, duration_scale, scanner) -> None:
+    def __init__(self, duration_scale, scanner:ScreenScanner) -> None:
         self.scanner = scanner
         self.proc_list = []
         self.duration_scale = duration_scale
@@ -243,18 +234,19 @@ class ProcValidator():
         self.proc_durations = np.array([v for _,v in proc_dict.items()]) * duration_scale
         self.proc_names = list(proc_dict)
         self.last_proc_reference_timestamp_unix_s = 0
+        self.last_proc_unix_s = 0
     
-    def add_proc(self, duration_remaining):
-        current_timestamp_unix_s = time.time()
-        expiry_timestamp_unix_s = current_timestamp_unix_s + duration_remaining
+    def process_detection(self, duration_remaining, screenshot_unix):
+        expiry_timestamp_unix_s = screenshot_unix + duration_remaining
 
         max_validations = 0
         max_validations_index = 0
         is_duplicate = False
+        last_validated_proc = None
         for i in reversed(range(len(self.proc_list))):
             proc:self.Proc = self.proc_list[i]
 
-            if proc.expiry_timestamp_unix_s < current_timestamp_unix_s:
+            if proc.expiry_timestamp_unix_s < screenshot_unix:
                 del self.proc_list[i]
                 continue
 
@@ -264,41 +256,64 @@ class ProcValidator():
                     max_validations_index = i
                 is_duplicate = True
                 break
+
+            if proc.validations >=2 and last_validated_proc is None:
+                last_validated_proc = proc
+
+        if last_validated_proc is not None:
+            self.last_proc_unix_s = last_validated_proc.start_timestamp_unix_s
         
-        if max_validations >= 3:
+        if max_validations >= 2:
             self.last_proc_reference_timestamp_unix_s = self.proc_list[max_validations_index].start_timestamp_unix_s
 
         # new proc
         if not is_duplicate:
-            abs_diff = abs(self.proc_durations - duration_remaining)
-            chosen_index = np.argmin(abs_diff)
+            affinity_duration = self.scanner.main_window.window_data.affinity_proc_duration
+            diff = self.proc_durations - duration_remaining
+            non_negative_indices = np.where(diff >= 0)[0]
+            if len(non_negative_indices) == 0:
+                return
+            min_index = non_negative_indices[np.argmin(diff[non_negative_indices])]
 
+            valid_time_restriction = (screenshot_unix - self.last_proc_unix_s)>25
             # extra restictions for adding a new affinity proc
-            valid_time_restriction = True
-            if self.proc_names[chosen_index] == "Affinity":
-                valid_time_restriction = (duration_remaining > self.scanner.affinity_duration-25 and duration_remaining <= self.scanner.affinity_duration) 
+            if self.proc_names[min_index] == "Affinity":
+                valid_time_restriction = (duration_remaining > affinity_duration-25 and duration_remaining <= affinity_duration) 
                 if len(self.scanner.affinity_proc_list) > 0:
-                    valid_time_restriction = valid_time_restriction and duration_remaining > ( self.scanner.affinity_proc_list[-1].get_expiry_unix_s() - current_timestamp_unix_s + 25 )
+                    valid_time_restriction = valid_time_restriction and duration_remaining > ( self.scanner.affinity_proc_list[-1].get_expiry_unix_s() - screenshot_unix + 25 )
 
-            self.proc_list.append(self.Proc(self.proc_names[chosen_index], self.proc_durations[chosen_index], duration_remaining, valid_time_restriction))
+            if valid_time_restriction:
+                self.proc_list.append(self.Proc(self.proc_names[min_index], self.proc_durations[min_index], duration_remaining, screenshot_unix, self.scanner))
 
     class Proc():
-        def __init__(self, name, base_duration, expiry_s, valid_time_restriction) -> None:
+        def __init__(self, name, base_duration, expiry_s, screenshot_unix, scanner:ScreenScanner) -> None:
             self.name = name
             self.base_duration = base_duration
             self.expiry_s = expiry_s
-            self.detection_timestamp_unix_s = time.time()
+            self.detection_timestamp_unix_s = screenshot_unix
             self.expiry_timestamp_unix_s = self.detection_timestamp_unix_s + expiry_s
-            self.start_timestamp_unix_s = self.expiry_timestamp_unix_s - base_duration
+            self.start_timestamp_unix_s = self.detection_timestamp_unix_s - expiry_s
             self.validations = 1
-            self.valid_time_restriction = valid_time_restriction
+            self.scanner = scanner
             self.active = False
+            self.mission_start_timestamp_unix_s = self.scanner.main_window.monitor.log_parser.mission_start_timestamp_unix_s
 
         def is_duplicate(self, test_timestamp_unix_s):
-            if abs(test_timestamp_unix_s - self.expiry_timestamp_unix_s) < 0.2:
+            if abs(test_timestamp_unix_s - self.expiry_timestamp_unix_s) < 0.1:
                 self.validations += 1
+                if self.validations >= 2 and not self.active:
+                    self.active = True
+                    data = {"name":self.name ,"proc_start_timestamp_unix_s":self.start_timestamp_unix_s, "mission_start_timestamp_unix_s": self.scanner.main_window.monitor.log_parser.mission_start_timestamp_unix_s, "proc_duration_s":self.base_duration,
+                            "detection_value":self.expiry_s, "detection_timestamp_unix_s": self.detection_timestamp_unix_s}
+                    pd.DataFrame([data]).to_csv(self.scanner.smeeta_history_file, mode='a', header=not os.path.isfile(self.scanner.smeeta_history_file), index=False)
+
+                    if self.name == "Affinity":
+                        affinity_duration = self.scanner.main_window.window_data.affinity_proc_duration
+                        self.scanner.affinity_proc_list.append( AffinityProc(self.start_timestamp_unix_s, affinity_duration) )
+                        self.scanner.sound_queue.append('procs_active_%d.mp3'%(len(self.scanner.affinity_proc_list)))
+                    
+                    self.scanner.main_window.charm_history.new_proc(self)
                 return True
-            
             return False
 
 def get_bordered_image(img, x1,y1,x2,y2, border=10):
@@ -323,22 +338,6 @@ def convert_cv_qpixmap(cv_img, w_s=None, h_s=None):
     if w_s is not None and  h_s is not None:
         qimage = qimage.scaled(w_s, h_s, QtCore.Qt.KeepAspectRatio)
     return QtGui.QPixmap.fromImage(qimage)
-
-class ArrayInterfaceAroundQImage(object):
-    __slots__ = ('__qimage', '__array_interface__')
-
-    def __init__(self, image, bytes_per_pixel):
-        self.__qimage = image
-
-        bytes_per_line = image.bytesPerLine()
-
-        self.__array_interface__ = dict(
-            shape = (image.height(), image.width()),
-            typestr = "|u%d" % bytes_per_pixel,
-            data = image.bits(),
-            strides = (bytes_per_line, bytes_per_pixel),
-            version = 3,
-        )
 
 def load_from_qrc(qrc, flag=cv2.IMREAD_COLOR):
     file = QtCore.QFile(qrc)
