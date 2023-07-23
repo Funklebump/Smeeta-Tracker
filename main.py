@@ -144,6 +144,8 @@ class MainWindow(QWidget):
 
     def create_files(self):
         if not os.path.isfile(os.path.join(self.script_folder,"user_ExportRegions.json")):
+            if not os.path.isfile(os.path.join(self.script_folder,"ExportRegions.json")):
+                raise Exception("Missing file: ExportRegions.json - Redownload from the github repository")
             os.rename(os.path.join(self.script_folder,'ExportRegions.json'),os.path.join(self.script_folder,'user_ExportRegions.json'))
 
     def closeEvent(self, arg):

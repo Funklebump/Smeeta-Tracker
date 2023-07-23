@@ -734,9 +734,9 @@
     <widget class="QFrame" name="frame_3">
      <property name="geometry">
       <rect>
-       <x>70</x>
+       <x>50</x>
        <y>40</y>
-       <width>191</width>
+       <width>231</width>
        <height>161</height>
       </rect>
      </property>
@@ -767,7 +767,7 @@
        <rect>
         <x>120</x>
         <y>50</y>
-        <width>51</width>
+        <width>81</width>
         <height>21</height>
        </rect>
       </property>
@@ -780,7 +780,7 @@
        <rect>
         <x>120</x>
         <y>30</y>
-        <width>51</width>
+        <width>81</width>
         <height>21</height>
        </rect>
       </property>
@@ -793,7 +793,7 @@
        <rect>
         <x>120</x>
         <y>110</y>
-        <width>51</width>
+        <width>91</width>
         <height>21</height>
        </rect>
       </property>
@@ -822,7 +822,7 @@
        <rect>
         <x>120</x>
         <y>70</y>
-        <width>51</width>
+        <width>81</width>
         <height>21</height>
        </rect>
       </property>
@@ -835,7 +835,7 @@
        <rect>
         <x>120</x>
         <y>90</y>
-        <width>51</width>
+        <width>91</width>
         <height>21</height>
        </rect>
       </property>
@@ -896,7 +896,7 @@
        <rect>
         <x>120</x>
         <y>130</y>
-        <width>51</width>
+        <width>91</width>
         <height>21</height>
        </rect>
       </property>
@@ -925,7 +925,7 @@
        <rect>
         <x>10</x>
         <y>0</y>
-        <width>171</width>
+        <width>211</width>
         <height>20</height>
        </rect>
       </property>
