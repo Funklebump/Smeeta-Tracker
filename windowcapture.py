@@ -1,7 +1,7 @@
 import numpy as np
-import win32api, win32con, win32gui, win32ui
-from win32api import GetSystemMetrics
+import win32gui, win32ui
 from ctypes import windll
+import time
 
 class WindowCapture:
     hwnd = None
@@ -13,39 +13,44 @@ class WindowCapture:
         self.window = window
         self.window_name = window_name
         # find the handle for the window we want to capture
-        self.hwnd = win32gui.FindWindow(None, self.window_name)
         self.cap_w, self.cap_h = capture_size
+        self.screenshot_timestamp = 0
+        self.hwnd = None
+        self.find_window()
+
+    def find_window(self):
+        self.hwnd = win32gui.FindWindow(None, self.window_name)
         if not self.hwnd:
-            #raise Exception('Window not found: {}'.format(window_name))
-            print('Window not found: {}'.format(window_name))
-            self.window.warframe_window_found = False
-        else:
-            self.window.warframe_window_found = True
+            print(f'Window not found: {self.window_name}')
+            return False
+        return True
+    
+    def is_window(self):
+        if self.hwnd is None or not win32gui.IsWindow(self.hwnd):
+            if not self.find_window():
+                print(f'Window called "{self.window_name}" not found.')
+                return False
+        return True
 
     def get_screenshot(self):
-        #get window properties
-        if not self.hwnd:
-            self.hwnd = win32gui.FindWindow(None, self.window_name)
-            if self.hwnd:
-                self.window.warframe_window_found = True
-            else:
+        # check if window handle is still valid
+        if not self.hwnd or not win32gui.IsWindow(self.hwnd):
+            if not self.find_window():
                 return None
+            
         try:
             left, top, right, bot = win32gui.GetWindowRect(self.hwnd)
-        except:
-            self.window.warframe_window_found = False
-            self.hwnd = win32gui.FindWindow(None, self.window_name)
-            if self.hwnd:
-                self.window.warframe_window_found = True
-
+        except Exception as e: 
+            print(e)
             return None
+        
         win_w = right - left
         win_h = bot - top
         # y_border_thickness = GetSystemMetrics(33) + GetSystemMetrics(4)
         y_border_thickness = 0
 
         #Upper left corner of detection box, given top left of screen is 0,0
-        self.cropped_x, self.cropped_y  = ( int(win_w - self.cap_w ) , int(y_border_thickness) )
+        self.cropped_x, self.cropped_y  = ( int(win_w - self.cap_w) , int(y_border_thickness) )
 
         # get the window image data
         try:
@@ -58,12 +63,14 @@ class WindowCapture:
         dataBitMap = win32ui.CreateBitmap()
         dataBitMap.CreateCompatibleBitmap(dcObj, win_w, win_h)
         cDC.SelectObject(dataBitMap)
+        
+        t1=time.time()
         result = windll.user32.PrintWindow(self.hwnd, cDC.GetSafeHdc(), 2)
+        self.screenshot_timestamp = (time.time()+t1)/2
 
         bmpinfo = dataBitMap.GetInfo()
 
-        # convert the raw data into a format opencv can read
-        #dataBitMap.SaveBitmapFile(cDC, 'debug.bmp')
+        # convert format
         signedIntsArray = dataBitMap.GetBitmapBits(True)
         img = np.fromstring(signedIntsArray, dtype='uint8')
         img.shape = (bmpinfo['bmHeight'], bmpinfo['bmWidth'], 4)
@@ -75,16 +82,4 @@ class WindowCapture:
         win32gui.ReleaseDC(self.hwnd, wDC)
         win32gui.DeleteObject(dataBitMap.GetHandle())
 
-        # drop the alpha channel, or cv.matchTemplate() will throw an error like:
-        #   error: (-215:Assertion failed) (depth == CV_8U || depth == CV_32F) && type == _templ.type() 
-        #   && _img.dims() <= 2 in function 'cv::matchTemplate'
-        img = img[...,:3]
-
-        # make image C_CONTIGUOUS to avoid errors that look like:
-        #   File ... in draw_rectangles
-        #   TypeError: an integer is required (got type tuple)
-        # see the discussion here:
-        # https://github.com/opencv/opencv/issues/14866#issuecomment-580207109
-        img = np.ascontiguousarray(img)
-
-        return img
+        return np.ascontiguousarray(img[...,:3])

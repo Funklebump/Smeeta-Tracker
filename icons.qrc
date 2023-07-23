@@ -1,0 +1,10 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+    <file>icons/charm.png</file>
+    <file>icons/100.png</file>
+    <file>icons/150.png</file>
+    <file>icons/200.png</file>
+    <file>icons/250.png</file>
+    <file>icons/300.png</file>
+</qresource>
+</RCC>
