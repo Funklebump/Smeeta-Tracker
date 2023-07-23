@@ -6,7 +6,7 @@ import json
 import datetime
 from win32gui import GetWindowText, GetForegroundWindow
 
-from PySide6.QtWidgets import QApplication, QWidget, QDoubleSpinBox, QFrame
+from PySide6.QtWidgets import QApplication, QWidget, QDoubleSpinBox, QFrame, QMessageBox
 from PySide6 import QtWidgets, QtGui, QtCore
 from PySide6.QtCore import Signal, QFile
 from PySide6.QtGui import QMouseEvent
@@ -86,6 +86,7 @@ class MainWindow(QWidget):
         self.ui.refresh_rate_slider.valueChanged.connect(self.window_data.update)
         self.ui.smeeta_icon_widget.update.connect(self.window_data.update)
         self.ui.text_color_widget.update.connect(self.window_data.update)
+        self.ui.play_all_proc_sounds_checkbox.stateChanged.connect(self.window_data.update)
 
         self.ui.override_hotkey_button.clicked.connect(self.hotkey.hotkey_next_keypress)
         self.ui.start_button.clicked.connect(self.monitor.start_scanning)
@@ -105,7 +106,7 @@ class MainWindow(QWidget):
         self.ui.test_icon_threshold_button.clicked.connect(self.display_icon_filter)
         self.ui.test_text_threshold_button.clicked.connect(self.display_text_filter)
 
-        self.ui.ui_scale_spinner.lineEdit().setReadOnly(True)
+        #self.ui.ui_scale_spinner.lineEdit().setReadOnly(True)
 
         # make a list of ui elements to disable when running
         self.ui_elements = [    self.ui.start_button,
@@ -128,10 +129,12 @@ class MainWindow(QWidget):
 
         self.create_files()
 
+        self.debug_image = PaintPicture(self)
+
         
     def load_ui(self):
         loader = QUiLoader()
-        loader.registerCustomWidget(StickyDoubleSpinBox)
+        loader.registerCustomWidget(StickySpinBox)
         loader.registerCustomWidget(ColorWidget)
         path = os.fspath(Path(__file__).resolve().parent / "form.ui")
         ui_file = QFile(path)
@@ -140,12 +143,8 @@ class MainWindow(QWidget):
         ui_file.close()
 
     def create_files(self):
-        if not os.path.isfile(os.path.join(self.script_folder,"solNodes.json")):
-            os.rename(os.path.join(self.script_folder,'base_solNodes.json'),os.path.join(self.script_folder,'solNodes.json'))
-
-        # if not os.path.isfile(os.path.join(self.script_folder,'charm_history.csv')):
-        #     df = pd.DataFrame([], columns=["smeeta_proc_unix_s", "mission_start_unix_s"])
-        #     df.to_csv(os.path.join(self.script_folder,'charm_history.csv'), header=True, index=False)
+        if not os.path.isfile(os.path.join(self.script_folder,"user_ExportRegions.json")):
+            os.rename(os.path.join(self.script_folder,'ExportRegions.json'),os.path.join(self.script_folder,'user_ExportRegions.json'))
 
     def closeEvent(self, arg):
         self.guisave(QtCore.QSettings(os.path.join(self.script_folder, 'saved_settings.ini'), QtCore.QSettings.IniFormat))
@@ -289,7 +288,7 @@ class MainWindow(QWidget):
             remaining_chances = int((round(next_affinity_expiry_s,1)+6)/27)
 
             self.overlay.scan_label_group.add_text(f'Active: {active_procs}')
-            self.overlay.scan_label_group.add_text(f'Next Expiry: {int(next_affinity_expiry_s)}')
+            self.overlay.scan_label_group.add_text(f'Next Expiry: {int(next_affinity_expiry_s)}', color="rgb(148, 255, 119)", bold=True)
             self.overlay.scan_label_group.add_text(f'Remaining Chances: {remaining_chances}')
             
             # update main window labels
@@ -304,7 +303,7 @@ class MainWindow(QWidget):
             self.ui.extra_proc_chances_label.setText(f'-')
 
         if self.monitor.log_parser.in_mission and self.ui.charm_rotation_checkbox.isChecked(): 
-            ref_timestamp = max(self.monitor.log_parser.mission_start_timestamp_unix_s+1, self.monitor.screen_scanner.proc_validator.last_proc_reference_timestamp_unix_s, self.hotkey.smeeta_rotation_override_unix)
+            ref_timestamp = max(self.monitor.log_parser.mission_start_timestamp_unix_s+1, self.monitor.screen_scanner.proc_validator.last_proc_start_unix_s, self.hotkey.smeeta_rotation_override_unix)
             self.overlay.scan_label_group.add_text(f'Charm Rotation: {(27.4-(time.time() - (ref_timestamp))%27.4):.1f}s')
 
         # update ui labels
@@ -332,7 +331,7 @@ class MainWindow(QWidget):
         # Display current arbitration in overlay
         if self.ui.dt5_checkbox.isChecked(): 
             mission_info_str = self.monitor.log_parser.get_node_info_string(self.monitor.log_parser.current_arbitration)
-            self.overlay.log_label_group.add_text(f'Current Arbitration: {mission_info_str} ({self.monitor.log_parser.current_arbitration})')
+            self.overlay.log_label_group.add_text(f'Arb: {mission_info_str} Exp: {(3600-(time.time()%3600))/60:.0f} mins')
 
         if self.ui.display_tmatch_checkbox.isChecked():
             self.overlay.scan_label_group.add_text(self.monitor.screen_scanner.template_match_status_text)
@@ -349,6 +348,7 @@ class MainWindow(QWidget):
     
     def display_detection_area(self):
         if not self.monitor.screen_scanner.screen_capture.is_window():
+            self.display_error(f'Cannot find a window named "Warframe".')
             return
         img = self.monitor.screen_scanner.screen_capture.get_screenshot()
         self.paint = PaintPicture(self)
@@ -356,6 +356,7 @@ class MainWindow(QWidget):
 
     def display_icon_filter(self):
         if not self.monitor.screen_scanner.screen_capture.is_window():
+            self.display_error(f'Cannot find a window named "Warframe".')
             return
         img = self.monitor.screen_scanner.screen_capture.get_screenshot()
         filtered_scan = scanner.hsv_filter(img, self.ui.smeeta_icon_widget.color_hsv, h_sens=4, s_sens=60, v_scale=0.6)
@@ -364,6 +365,7 @@ class MainWindow(QWidget):
 
     def display_text_filter(self):
         if not self.monitor.screen_scanner.screen_capture.is_window():
+            self.display_error(f'Cannot find a window named "Warframe".')
             return
         img = self.monitor.screen_scanner.screen_capture.get_screenshot()
         filtered_scan = self.monitor.screen_scanner.text_hsv_filter(img, self.ui.text_color_widget.color_hsv)
@@ -374,6 +376,20 @@ class MainWindow(QWidget):
         self.paint = PaintPicture(self)
         self.paint.plot_logs(self)
 
+    def show_video(self, image):
+        if image is None:
+            return
+        if self.debug_image is None:
+            self.debug_image = PaintPicture(self)
+        self.debug_image.show_image_sequence(image)
+
+    def display_error(self, error_message):
+        self.dlg = QMessageBox(self)
+        self.dlg.setWindowTitle("Error")
+        self.dlg.setText(error_message)
+        self.dlg.setIcon(QMessageBox.Warning)
+        self.dlg.exec()
+
 class WindowData():
     def __init__(self, ui) -> None:
         self.ui = ui
@@ -382,15 +398,16 @@ class WindowData():
 
     def update(self):
         self.affinity_proc_duration = 120 if self.ui.time_120_radio_button.isChecked() else 156
-        self.duration_scale = 1 if self.ui.time_120_radio_button.isChecked() else 1.3
+        self.duration_multiplier = 1 if self.ui.time_120_radio_button.isChecked() else 1.3
         self.drop_chance_booster = 2 if self.ui.drop_chance_booster_checkbox.isChecked() else 1
         self.drop_booster = 2 if self.ui.drop_booster_checkbox.isChecked() else 1
         self.drop_booster2 = 2 if self.ui.drop_booster_checkbox_2.isChecked() else 1
         self.bless_booster = 1.25 if self.ui.bless_booster_checkbox.isChecked() else 1
         self.dark_sector_booster = self.ui.dark_sector_booster_spinner.value()
-        self.ui_scale = self.ui.ui_scale_spinner.value()
+        self.ui_scale = self.ui.ui_scale_spinner.value()/100
         self.template_match_threshold = self.ui.template_match_slider.value()/100
-        self.scanner_refresh_rate_s = 0.5+2*self.ui.refresh_rate_slider.value()/100
+        self.scanner_refresh_rate_s = 0.5+1*self.ui.refresh_rate_slider.value()/100
+        self.play_all_proc_sounds = self.ui.play_all_proc_sounds_checkbox.isChecked()
 
         self.ui.template_match_label.setText(f'{self.ui.template_match_slider.value():.0f}%')
         self.ui.refresh_rate_label.setText(f'{self.scanner_refresh_rate_s:.1f}s')
@@ -442,14 +459,14 @@ class CharmHistory():
         if not os.path.isfile(charm_history_file):
             return
         df = pd.read_csv(charm_history_file)
-        df['start_time_s'] = df['proc_start_timestamp_unix_s'] - df['mission_start_timestamp_unix_s']
-        for start_time in df.mission_start_timestamp_unix_s.unique():
-            df_f = df[(df.mission_start_timestamp_unix_s == start_time)]
+        df['start_time_s'] = df['proc_start_timestamp_unix_s'] - df['scan_start_timestamp_unix_s']
+        for start_time in df.scan_start_timestamp_unix_s.unique():
+            df_f = df[(df.scan_start_timestamp_unix_s == start_time)]
             mission_duration_s = df_f['start_time_s'].max()
             self.total_mission_time += mission_duration_s
 
-        self.ref_mission_start_unix_s = df.mission_start_timestamp_unix_s.max()
-        df_f = df[(df.mission_start_timestamp_unix_s == self.ref_mission_start_unix_s)]
+        self.ref_mission_start_unix_s = df.scan_start_timestamp_unix_s.max()
+        df_f = df[(df.scan_start_timestamp_unix_s == self.ref_mission_start_unix_s)]
         self.ref_mission_time_s = df_f.proc_start_timestamp_unix_s.max()
 
         value_counts = df['name'].value_counts()
@@ -475,13 +492,13 @@ class CharmHistory():
         elif proc.name == "Energy Refund":
             self.total_energy_refund_procs += 1
 
-        if proc.mission_start_timestamp_unix_s != self.ref_mission_start_unix_s:
-            self.ref_mission_start_unix_s = proc.mission_start_timestamp_unix_s
-            ref_mission_time_s = (proc.start_timestamp_unix_s - proc.mission_start_timestamp_unix_s)
+        if proc.scan_start_timestamp_unix_s != self.ref_mission_start_unix_s:
+            self.ref_mission_start_unix_s = proc.scan_start_timestamp_unix_s
+            ref_mission_time_s = (proc.start_timestamp_unix_s - proc.scan_start_timestamp_unix_s)
             self.total_mission_time += ref_mission_time_s
             self.ref_mission_time_s = ref_mission_time_s
         else:
-            new_ref_mission_time_s = (proc.start_timestamp_unix_s - proc.mission_start_timestamp_unix_s)
+            new_ref_mission_time_s = (proc.start_timestamp_unix_s - proc.scan_start_timestamp_unix_s)
             self.total_mission_time -= self.ref_mission_time_s
             self.total_mission_time += new_ref_mission_time_s
 
@@ -558,17 +575,22 @@ class Overlay(QtWidgets.QDialog):
             self.label_list = []
             self.occupied_labels = 0
             self.count=0
-            for i in range(5):
+            for i in range(6):
                 self.label_list.append( QtWidgets.QLabel(''))
                 self.label_list[i].setFont(QtGui.QFont('Arial', 13))
                 self.label_list[i].setStyleSheet("color : white")
                 layout.addWidget(self.label_list[i])
 
-        def add_text(self, text):
+        def add_text(self, text, color="white", bold=False):
             if GetWindowText(GetForegroundWindow()) == 'Warframe':
                 if self.occupied_labels >= len(self.label_list):
                     self.reset_text()
                 self.label_list[self.occupied_labels].setText(text)
+
+                fontweight = "bold" if bold else "normal"
+                stylesheet = f'color : {color}; font-weight: {fontweight}'
+                self.label_list[self.occupied_labels].setStyleSheet(stylesheet)
+
                 self.occupied_labels += 1
 
         def reset_text(self):
@@ -590,12 +612,14 @@ class PaintPicture(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout(self)
         self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.MSWindowsFixedSizeDialogHint | QtCore.Qt.WindowStaysOnTopHint)
         self.setLayout(layout)
+        self.color_widget = None
+        self.image_sequence_label = None
 
-    def show_image(self, cv_img, obj:'ColorWidget'):
+    def show_image(self, cv_img, color_widget:'ColorWidget'):
         self.image = cv_img
         if len(cv_img.shape) == 3:
             self.image_hsv = cv2.cvtColor(cv_img, cv2.COLOR_BGR2HSV)
-        self.obj = obj
+        self.color_widget = color_widget
 
         x, y = cv_img.shape[1], cv_img.shape[0]
 
@@ -610,12 +634,39 @@ class PaintPicture(QtWidgets.QDialog):
         self.show()
         self.imageLabel.move(0,0)
 
+    def show_image_sequence(self, image):
+        self.image = image
+        if len(image.shape) == 3:
+            self.image_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+        x, y = image.shape[1], image.shape[0]
+
+        add_label = False
+        if self.image_sequence_label is None:
+            add_label=True
+            self.image_sequence_label = QtWidgets.QLabel()
+            self.image_sequence_label.setGeometry(0, 0, x, y)
+
+        pixmap = convert_cv_qt(image)
+        self.image_sequence_label.setPixmap(pixmap)
+
+        if add_label:
+            layout = self.layout()
+            layout.addWidget(self.image_sequence_label)
+            self.image_sequence_label.move(0,0)
+        self.show()
+
+    def remove_all_widgets(self):
+        layout = self.layout()
+        for i in reversed(range(layout.count())): 
+            layout.itemAt(i).widget().setParent(None)
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         y,x = int(event.position().y()), int(event.position().x())
 
-        if self.obj is not None and y < self.image_hsv.shape[0] and x < self.image_hsv.shape[1]:
-            self.obj.set_color(self.image_hsv[y,x])
-            self.obj = None
+        if self.color_widget is not None and y < self.image_hsv.shape[0] and x < self.image_hsv.shape[1]:
+            self.color_widget.set_color(self.image_hsv[y,x])
+            self.color_widget = None
             self.accept()
         return super().mousePressEvent(event)
     
@@ -624,6 +675,7 @@ class PaintPicture(QtWidgets.QDialog):
 
         df = main_window.monitor.log_parser.parse_arbitration_logs()
         if df is None:
+            main_window.display_error(f'No mission data to analyze.')
             print(f'No mission data')
             return
 
@@ -646,15 +698,19 @@ class PaintPicture(QtWidgets.QDialog):
         if os.path.isfile(charm_history_file):
             df_s = pd.read_csv(charm_history_file)
             if not df_s.empty:
-                smeeta_proc_timestamps_unix_s = df_s['smeeta_proc_unix_s'].to_numpy()
+                df_s_filt = df_s[(df_s.name == "Affinity")]
+                smeeta_proc_timestamps_unix_s = df_s_filt['proc_start_timestamp_unix_s'].to_numpy()
+                affinity_duration = df_s_filt['proc_duration_s'].iloc[0]
 
                 mission_start_time_unix_s = df.timestamp_unix_s.min()
                 mission_end_time_unix_s = df.timestamp_unix_s.max()
                 mission_smeeta_proc_timestamps_unix_s = smeeta_proc_timestamps_unix_s[np.where((smeeta_proc_timestamps_unix_s>mission_start_time_unix_s) & (smeeta_proc_timestamps_unix_s < mission_end_time_unix_s))]
                 for smeeta_proc_timestamp in mission_smeeta_proc_timestamps_unix_s:
-                    self.sc.axs[2].axvspan((smeeta_proc_timestamp - mission_start_time_unix_s)/60, (smeeta_proc_timestamp - mission_start_time_unix_s + main_window.window_data.affinity_proc_duration)/60, alpha=0.5, color='green')
-                    df.loc[ (df.timestamp_unix_s > smeeta_proc_timestamp) & (df.timestamp_unix_s < smeeta_proc_timestamp + main_window.window_data.affinity_proc_duration), 'boost'] *= 2
+                    self.sc.axs[2].axvspan((smeeta_proc_timestamp - mission_start_time_unix_s)/60, (smeeta_proc_timestamp - mission_start_time_unix_s + affinity_duration)/60, alpha=0.5, color='green')
+                    df.loc[ (df.timestamp_unix_s > smeeta_proc_timestamp) & (df.timestamp_unix_s < smeeta_proc_timestamp + affinity_duration), 'boost'] *= 2
                 self.sc.axs[2].legend(['Smeeta proc'])
+                leg = self.sc.axs[2].get_legend()
+                leg.legend_handles[0].set_color('green')   
 
         total_vitus_essence = np.sum( np.multiply( df.boost.to_numpy(), df.drone_count_diff.to_numpy() ) )
 
@@ -678,15 +734,15 @@ class MplCanvas(FigureCanvasQTAgg):
         self.axs = self.fig.axes
         super(MplCanvas, self).__init__(self.fig)
 
-class StickyDoubleSpinBox(QDoubleSpinBox):
+class StickySpinBox(QSpinBox):
     def __init__(self, parent=None, *args):
         super().__init__(parent, *args)
-        self.setSingleStep(0.5)
+        self.setSingleStep(50)
         self.valueChanged.connect(self.roundValue)
 
     def roundValue(self):
         value = self.value()
-        rounded_value = round(value * 2) / 2
+        rounded_value = int(100*round(value/100 * 2) / 2)
         if rounded_value != value:
             self.setValue(rounded_value)
 

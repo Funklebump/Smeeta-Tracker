@@ -335,19 +335,6 @@
          <string>Extra proc chances:</string>
         </property>
        </widget>
-       <widget class="QLabel" name="label">
-        <property name="geometry">
-         <rect>
-          <x>20</x>
-          <y>10</y>
-          <width>71</width>
-          <height>16</height>
-         </rect>
-        </property>
-        <property name="text">
-         <string>Procs Active:</string>
-        </property>
-       </widget>
        <widget class="QLabel" name="total_boost_label">
         <property name="geometry">
          <rect>
@@ -372,6 +359,19 @@
         </property>
         <property name="text">
          <string>0</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="label">
+        <property name="geometry">
+         <rect>
+          <x>20</x>
+          <y>10</y>
+          <width>101</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Procs Active:</string>
         </property>
        </widget>
       </widget>
@@ -399,10 +399,10 @@
       <widget class="QFrame" name="frame_5">
        <property name="geometry">
         <rect>
-         <x>70</x>
+         <x>40</x>
          <y>30</y>
-         <width>191</width>
-         <height>91</height>
+         <width>251</width>
+         <height>101</height>
         </rect>
        </property>
        <property name="frameShape">
@@ -416,12 +416,15 @@
          <rect>
           <x>10</x>
           <y>10</y>
-          <width>51</width>
+          <width>81</width>
           <height>20</height>
          </rect>
         </property>
         <property name="text">
          <string>Affinity:</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
         </property>
        </widget>
        <widget class="QLabel" name="label_26">
@@ -429,12 +432,15 @@
          <rect>
           <x>10</x>
           <y>30</y>
-          <width>51</width>
+          <width>81</width>
           <height>20</height>
          </rect>
         </property>
         <property name="text">
          <string>Critical:</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
         </property>
        </widget>
        <widget class="QLabel" name="label_27">
@@ -442,18 +448,21 @@
          <rect>
           <x>10</x>
           <y>50</y>
-          <width>51</width>
+          <width>81</width>
           <height>20</height>
          </rect>
         </property>
         <property name="text">
          <string>Energy:</string>
         </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+        </property>
        </widget>
        <widget class="QLabel" name="affinity_count_label">
         <property name="geometry">
          <rect>
-          <x>60</x>
+          <x>100</x>
           <y>10</y>
           <width>61</width>
           <height>20</height>
@@ -466,7 +475,7 @@
        <widget class="QLabel" name="critical_count_label">
         <property name="geometry">
          <rect>
-          <x>60</x>
+          <x>100</x>
           <y>30</y>
           <width>61</width>
           <height>20</height>
@@ -479,7 +488,7 @@
        <widget class="QLabel" name="energy_count_label">
         <property name="geometry">
          <rect>
-          <x>60</x>
+          <x>100</x>
           <y>50</y>
           <width>61</width>
           <height>20</height>
@@ -492,7 +501,7 @@
        <widget class="QLabel" name="total_mission_time_label">
         <property name="geometry">
          <rect>
-          <x>60</x>
+          <x>100</x>
           <y>70</y>
           <width>61</width>
           <height>20</height>
@@ -500,6 +509,22 @@
         </property>
         <property name="text">
          <string>0</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="label_29">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>70</y>
+          <width>81</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Mission Time:</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
         </property>
        </widget>
       </widget>
@@ -513,7 +538,10 @@
         </rect>
        </property>
        <property name="text">
-        <string>Totals</string>
+        <string>Total Stats</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignCenter</set>
        </property>
       </widget>
      </widget>
@@ -1218,7 +1246,7 @@
        <property name="geometry">
         <rect>
          <x>120</x>
-         <y>300</y>
+         <y>320</y>
          <width>121</width>
          <height>21</height>
         </rect>
@@ -1245,12 +1273,15 @@
        <property name="text">
         <string>Display Icon Match %</string>
        </property>
+       <property name="checked">
+        <bool>true</bool>
+       </property>
       </widget>
       <widget class="QCheckBox" name="charm_rotation_checkbox">
        <property name="geometry">
         <rect>
          <x>10</x>
-         <y>220</y>
+         <y>240</y>
          <width>121</width>
          <height>19</height>
         </rect>
@@ -1272,7 +1303,7 @@
        <property name="geometry">
         <rect>
          <x>130</x>
-         <y>260</y>
+         <y>280</y>
          <width>91</width>
          <height>31</height>
         </rect>
@@ -1300,7 +1331,7 @@
        <property name="geometry">
         <rect>
          <x>10</x>
-         <y>260</y>
+         <y>280</y>
          <width>111</width>
          <height>31</height>
         </rect>
@@ -1313,7 +1344,7 @@
        <property name="geometry">
         <rect>
          <x>230</x>
-         <y>260</y>
+         <y>280</y>
          <width>47</width>
          <height>31</height>
         </rect>
@@ -1326,7 +1357,7 @@
        <property name="geometry">
         <rect>
          <x>120</x>
-         <y>220</y>
+         <y>240</y>
          <width>121</width>
          <height>21</height>
         </rect>
@@ -1345,7 +1376,7 @@
        <property name="geometry">
         <rect>
          <x>0</x>
-         <y>200</y>
+         <y>220</y>
          <width>321</width>
          <height>20</height>
         </rect>
@@ -1358,41 +1389,13 @@
        <property name="geometry">
         <rect>
          <x>0</x>
-         <y>240</y>
+         <y>270</y>
          <width>321</width>
          <height>21</height>
         </rect>
        </property>
        <property name="orientation">
         <enum>Qt::Horizontal</enum>
-       </property>
-      </widget>
-      <widget class="StickyDoubleSpinBox" name="ui_scale_spinner">
-       <property name="geometry">
-        <rect>
-         <x>170</x>
-         <y>90</y>
-         <width>62</width>
-         <height>22</height>
-        </rect>
-       </property>
-       <property name="toolTip">
-        <string extracomment="Currently only increments of 0.5 are supported"/>
-       </property>
-       <property name="toolTipDuration">
-        <number>5000</number>
-       </property>
-       <property name="decimals">
-        <number>1</number>
-       </property>
-       <property name="minimum">
-        <double>1.000000000000000</double>
-       </property>
-       <property name="maximum">
-        <double>3.000000000000000</double>
-       </property>
-       <property name="singleStep">
-        <double>0.500000000000000</double>
        </property>
       </widget>
       <widget class="QLabel" name="label_22">
@@ -1425,7 +1428,7 @@
        <property name="geometry">
         <rect>
          <x>250</x>
-         <y>220</y>
+         <y>240</y>
          <width>71</width>
          <height>21</height>
         </rect>
@@ -1452,6 +1455,44 @@
          <set>Qt::AlignCenter</set>
         </property>
        </widget>
+      </widget>
+      <widget class="QSpinBox" name="ui_scale_spinner">
+       <property name="geometry">
+        <rect>
+         <x>160</x>
+         <y>90</y>
+         <width>61</width>
+         <height>22</height>
+        </rect>
+       </property>
+       <property name="minimum">
+        <number>100</number>
+       </property>
+       <property name="maximum">
+        <number>300</number>
+       </property>
+       <property name="singleStep">
+        <number>50</number>
+       </property>
+      </widget>
+      <widget class="QCheckBox" name="play_all_proc_sounds_checkbox">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>200</y>
+         <width>141</width>
+         <height>19</height>
+        </rect>
+       </property>
+       <property name="toolTip">
+        <string>Play a sound whenever a critical or energy proc is detected.</string>
+       </property>
+       <property name="toolTipDuration">
+        <number>5000</number>
+       </property>
+       <property name="text">
+        <string>Play sound for all procs</string>
+       </property>
       </widget>
      </widget>
      <widget class="QWidget" name="tab_6">
@@ -1573,11 +1614,6 @@
   </widget>
  </widget>
  <customwidgets>
-  <customwidget>
-   <class>StickyDoubleSpinBox</class>
-   <extends>QDoubleSpinBox</extends>
-   <header>main.h</header>
-  </customwidget>
   <customwidget>
    <class>ColorWidget</class>
    <extends>QWidget</extends>

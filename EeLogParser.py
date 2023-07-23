@@ -19,6 +19,11 @@ class EeLogParser:
         self.dirname = os.path.dirname(os.path.abspath(__file__))
         self.ee_log_path = os.path.join(shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA, None, 0), 'Warframe\ee.log')
 
+        self.user_ExportRegions = None
+        if os.path.isfile(os.path.join(self.dirname,"user_ExportRegions.json")):
+            with open(os.path.join(self.dirname,"user_ExportRegions.json"), encoding='utf-8') as f:
+                self.user_ExportRegions = json.load(f)
+
         self.current_arbitration = self.get_recent_node_name("Script [Info]: Background.lua: EliteAlertMission at ")
         #TODO change usage of current_arbitration
         self.recently_played_mission = self.get_recent_node_name("Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":")
@@ -38,6 +43,11 @@ class EeLogParser:
         self.drones_per_hour = 0
 
     def reset(self):
+        self.user_ExportRegions = None
+        if os.path.isfile(os.path.join(self.dirname,"user_ExportRegions.json")):
+            with open(os.path.join(self.dirname,"user_ExportRegions.json"), encoding='utf-8') as f:
+                self.user_ExportRegions = json.load(f)
+
         self.current_arbitration = self.get_recent_node_name("Script [Info]: Background.lua: EliteAlertMission at ")
         self.recently_played_mission = self.get_recent_node_name("Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":")
 
@@ -100,14 +110,17 @@ class EeLogParser:
                     found_end = True
                     print(f'[{log_timestamp_s}]: Mission has ended')
                     self.mission_end_timestamp_s = log_timestamp_s
+                    if self.drone_spawns > 0:
+                        # save logs to file
+                        self.parse_arbitration_logs()
                     self.in_mission = False
                     self.window.monitor.screen_scanner.reset()
                     self.drone_spawns = 0
                     self.enemy_spawns = 0
                     self.drones_per_hour = 0
+                    
                 # Check if drone has spawned
                 elif are_elems_in_line(constants.DRONE_AGENT_CREATED_TEXT, line):
-                    print(line)
                     self.drone_spawns += 1
                 # Check if enemy has spawned
                 elif are_elems_in_line(constants.AGENT_CREATED_TEXT, line) and not are_elems_in_line(constants.INVALID_AGENT_CREATED_TEXT, line):
@@ -120,8 +133,12 @@ class EeLogParser:
                     if not found_end:
                         print(f'[{log_timestamp_s}]: Mission has started')
                         self.in_mission = True
+                        
                     self.mission_start_timestamp_s = log_timestamp_s
                     self.mission_start_timestamp_unix_s = log_timestamp_s + self.game_start_time_unix_s
+                    if self.drone_spawns > 0 and found_end:
+                        # save logs to file
+                        self.parse_arbitration_logs()
                     break
                 # check for mission start name
                 elif are_elems_in_line(constants.MISSION_NAME_TEXT, line):
@@ -168,59 +185,17 @@ class EeLogParser:
             return
         return match.group(0)
 
-    def plot_logs(self):
-        fig, axs = plt.subplots(2,2)
-        df = self.parse_arbitration_logs()
-        if df is None:
-            print(f'No mission data')
-            return
-
-        sns.lineplot(data=df, x='mission_time_minutes', y='drones_per_hour', ax=axs[1][1], errorbar=None)
-        sns.lineplot(data=df, x='mission_time_minutes', y='drones_per_enemy', ax=axs[0][1], errorbar=None)
-        sns.lineplot(data=df, x='mission_time_minutes', y='enemy_count', ax=axs[0][0], errorbar=None)
-        sns.lineplot(data=df, x='mission_time_minutes', y='drone_count', ax=axs[1][0], errorbar=None)
-
-        axs[0][0].set_title('Enemy spawns')
-        axs[1][0].set_title('Drone spawns')
-        axs[0][1].set_title('Drones per enemy')
-        axs[1][1].set_title('Drones per hour')
-
-        df.sort_values(by='mission_time_minutes', inplace=True)
-        vitus_chance = self.get_vitus_essence_chance()
-        df['boost'] = np.array([vitus_chance]*len(df.index))
-        df['drone_count_diff'] = np.diff(df.drone_count.to_numpy(), prepend=0)
-
-        df_s = pd.read_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'smeeta_history.csv'))
-        df_s_filt = df_s[(df_s.name == "Affinity")]
-        smeeta_proc_timestamps_unix_s = df_s_filt['proc_start_timestamp_unix_s'].to_numpy()
-
-        mission_start_time_unix_s = df.timestamp_unix_s.min()
-        mission_end_time_unix_s = df.timestamp_unix_s.max()
-        mission_smeeta_proc_timestamps_unix_s = smeeta_proc_timestamps_unix_s[np.where((smeeta_proc_timestamps_unix_s>mission_start_time_unix_s) & (smeeta_proc_timestamps_unix_s < mission_end_time_unix_s))]
-        for smeeta_proc_timestamp in mission_smeeta_proc_timestamps_unix_s:
-            axs[1][0].axvspan((smeeta_proc_timestamp - mission_start_time_unix_s)/60, (smeeta_proc_timestamp - mission_start_time_unix_s + self.window.affinity_proc_duration)/60, alpha=0.5, color='green')
-            df.loc[ (df.timestamp_unix_s > smeeta_proc_timestamp) & (df.timestamp_unix_s < smeeta_proc_timestamp + self.window.affinity_proc_duration), 'boost'] *= 2
-        axs[1][0].legend(['Smeeta proc'])
-
-        total_vitus_essence = np.sum( np.multiply( df.boost.to_numpy(), df.drone_count_diff.to_numpy() ) )
-
-        # get last mission
-        mission_info_str = self.get_node_info_string(self.recently_played_mission)
-
-        plt.suptitle(f'{mission_info_str}\nDrones: {df.drone_count.max()}\nAvg VE Drops: {total_vitus_essence:.0f}; Avg Boost: {total_vitus_essence/(max(1,df.drone_count.max())*0.06):.2f}')
-        fig.tight_layout()
-        
-        plt.show()
-
     def parse_arbitration_logs(self):
         if not os.path.isfile(self.ee_log_path):
             return
+        self.sync_time()
         
         data = []
         drone_count = 0
         enemy_count = 0
         latest_log_time_s = None
-        mission_end_time_s = None
+        mission_end_time_unix_s = None
+        mission_start_time_unix_s = None
 
         with open(self.ee_log_path, encoding="utf8", errors='replace') as log_file:
             line_stitch = ''
@@ -238,10 +213,11 @@ class EeLogParser:
                     latest_log_time_s = log_time_s
      
                 if are_elems_in_line(constants.MISSION_START_TEXT, line):
+                    mission_start_time_unix_s = self.game_start_time_unix_s + log_time_s
                     data.append({'log_time_s':log_time_s, 'drone_count':drone_count, 'enemy_count':enemy_count})
                     break
                 elif are_elems_in_line(constants.MISSION_END_TEXT, line):
-                    mission_end_time_s = self.game_start_time_unix_s + log_time_s
+                    mission_end_time_unix_s = self.game_start_time_unix_s + log_time_s
                 elif are_elems_in_line(constants.DRONE_AGENT_CREATED_TEXT, line):
                     drone_count+=1
                     data.append({'log_time_s':log_time_s, 'drone_count':drone_count, 'enemy_count':enemy_count})
@@ -252,13 +228,20 @@ class EeLogParser:
                     drone_count-=1
                     data.append({'log_time_s':log_time_s, 'drone_count':drone_count, 'enemy_count':enemy_count})
 
-        if mission_end_time_s is None:
-            mission_end_time_s = latest_log_time_s
-
         if len(data) == 0:
             return
-
         df = pd.DataFrame(data)
+
+        if mission_start_time_unix_s is not None and mission_end_time_unix_s is not None:
+            self.save_mission_data(df, mission_start_time_unix_s, mission_end_time_unix_s)
+
+        if mission_end_time_unix_s is None:
+            mission_end_time_unix_s = self.game_start_time_unix_s + latest_log_time_s 
+
+        if mission_start_time_unix_s is None:
+            mission_start_time_unix_s = self.game_start_time_unix_s + log_time_s 
+
+        
         df.drone_count = np.abs( df.drone_count.to_numpy() - df.drone_count.max() )
         df.enemy_count = np.abs( df.enemy_count.to_numpy() - df.enemy_count.max() )
         df['timestamp_unix_s'] = df.log_time_s.to_numpy() + self.game_start_time_unix_s
@@ -268,21 +251,37 @@ class EeLogParser:
         df['drones_per_enemy'] = np.divide(df.drone_count.to_numpy(), np.clip(df.enemy_count.to_numpy(), 1, None))
         df['enemies_per_hour'] = np.divide(df.enemy_count.to_numpy()*3600, np.clip(df.mission_time_s.to_numpy(), 1, None))
 
-        #last_mission_node = self.get_recent_node_name("Script [Info]: ThemedSquadOverlay.lua: Host loading {\"name\":")
-        if self.recently_played_mission is not None:
-            with open(os.path.join(self.dirname,"solNodes.json")) as f:
-                map_info = json.load(f)
-            node_info = map_info.get(self.recently_played_mission)
-            if node_info:
-                PB = node_info.get("personal_best_dph", 0)
-                if df.drones_per_hour.iloc[-1] > PB:
-                    map_info[self.recently_played_mission]["personal_best_dph"] = df.drones_per_hour.iloc[-1]
-                    # save 
-                    with open(os.path.join(self.dirname,"solNodes.json"), "r+") as fp:
-                        fp.truncate(0)
-                        json.dump(map_info , fp) 
-
         return df
+    
+    def save_mission_data(self, df:pd.DataFrame, mission_start_time_unix_s, mission_end_time_unix_s):
+        if not os.path.isfile(os.path.join(self.dirname,"user_ExportRegions.json")):
+            return
+        with open(os.path.join(self.dirname,"user_ExportRegions.json")) as f:
+            data = json.load(f)
+        map_list = data.get('ExportRegions')
+        if map_list is None:
+            return
+        
+        mission_data = next((item for item in map_list if item.get("uniqueName", "") == self.recently_played_mission), None)
+        if mission_data is None:
+            return
+        
+        previous_run_list = mission_data.get('previous_run_list')
+        new_mission_data = {"mission_start_time_unix_s":float(mission_start_time_unix_s), "mission_end_time_unix_s":float(mission_end_time_unix_s), 
+                            "arbitration_drone_spawn_count":int(df["drone_count"].max()), "enemy_spawn_count":int(df["enemy_count"].max())}
+
+        if previous_run_list is None:
+            mission_data["previous_run_list"] = [new_mission_data]
+        else:
+            # verify that this mission was not already saved
+            mission = next((item for item in previous_run_list if int(item.get("mission_start_time_unix_s", -1)) == int(mission_start_time_unix_s)), None)
+            if mission is not None:
+                return
+            mission_data["previous_run_list"] = mission_data["previous_run_list"].append(new_mission_data)
+
+        with open(os.path.join(self.dirname,"user_ExportRegions.json"), "r+") as fp:
+            fp.truncate(0)
+            json.dump(data , fp) 
     
     def get_vitus_essence_chance(self):
         return self.window.window_data.drop_chance_booster * self.window.window_data.drop_booster * self.window.window_data.drop_booster2 * \
@@ -290,13 +289,26 @@ class EeLogParser:
 
     def get_node_info_string(self, node):
         mission_info_str=''
-        if not node:
+        if node is None:
             return mission_info_str
-        with open(os.path.join(self.dirname,"solNodes.json"), encoding='utf-8') as f:
-            map_info = json.load(f)
-        node_info = map_info.get(node)
-        if node_info:
-            mission_info_str = f'{node_info["value"]} - {node_info["enemy"]} {node_info["type"]}'
+        
+        if self.user_ExportRegions is None:
+            return
+        
+        map_list = self.user_ExportRegions.get('ExportRegions')
+        if map_list is None:
+            return
+        
+        mission_data = next((item for item in map_list if item.get("uniqueName", "") == node), None)
+        if mission_data is None:
+            return
+        
+        name = mission_data.get("name", "")
+        systemName = mission_data.get("systemName", "")
+        factionName = constants.FACTIONINDEX_NAME.get(mission_data.get("factionIndex", -1), "")
+        missionName = constants.MISSIONINDEX_NAME.get(mission_data.get("missionIndex", -1), "")
+
+        mission_info_str = f'{name} ({systemName}), {factionName} {missionName}'
         return mission_info_str
 
 def are_elems_in_line(elems:list, line:str):

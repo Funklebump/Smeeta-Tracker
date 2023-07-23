@@ -13,6 +13,8 @@ import numpy as np
 import scipy.signal
 import pandas as pd
 import matplotlib.pyplot as plt
+import constants
+from math import ceil, floor
 import rc_icons
   
 class ScreenScanner:
@@ -24,27 +26,29 @@ class ScreenScanner:
         ui_scale = self.main_window.window_data.ui_scale
         ui_rotation = -3.65/ui_scale
         self.M = cv2.getRotationMatrix2D((0,0), ui_rotation, 1)
-        self.affinity_proc_template = load_from_qrc(f':/icons/{int(ui_scale*100)}.png')
 
+        self.affinity_proc_template = downsample_icon(load_from_qrc(f':/icons/{int(round_half_down(ui_scale)*100)}.png'), ui_scale)
+        
         self.screen_capture = WindowCapture('Warframe', ( int(750*(1+(ui_scale-1)*0.5)) , int(300*(1+(ui_scale-1)*0.5)) ) , self.main_window)
 
         # white text requires a special filter
         self.text_hsv_filter = white_hsv_filter if self.main_window.ui.text_color_widget.color_hsv == [0,0,255] else hsv_filter
 
         self.template_match_status_text = ''
-        self.proc_validator = ProcValidator(main_window.window_data.duration_scale, self)
+        self.proc_validator = ProcValidator(main_window.window_data.duration_multiplier, self)
 
         self.affinity_proc_list = []
         self.sound_queue = deque([])
 
+        self.debug_image = None
+        self.exit_=False
+
     def update_ui_scale(self):
         ui_scale = self.main_window.window_data.ui_scale
-        
-        self.affinity_proc_template = load_from_qrc(f':/icons/{int(ui_scale*100)}.png')
         self.screen_capture = WindowCapture('Warframe', ( int(750*(1+(ui_scale-1)*0.5)) , int(300*(1+(ui_scale-1)*0.5)) ) , self.main_window)
-
         ui_rotation = -3.65/self.main_window.window_data.ui_scale
         self.M = cv2.getRotationMatrix2D((0,0), ui_rotation, 1)
+        self.affinity_proc_template = downsample_icon(load_from_qrc(f':/icons/{int(round_half_down(ui_scale)*100)}.png'), ui_scale)
 
     def update_text_color(self):
         self.text_hsv_filter = white_hsv_filter if self.main_window.ui.text_color_widget.color_hsv == [0,0,255] else hsv_filter
@@ -66,7 +70,7 @@ class ScreenScanner:
     def template_match(self, screenshot, plot=False):
         icon_color = self.main_window.ui.smeeta_icon_widget.color_hsv
 
-        template = self.affinity_proc_template[:, :, 0]
+        template = self.affinity_proc_template
         h,w = template.shape
 
         filtered_scan = hsv_filter(screenshot, icon_color, h_sens=4, s_sens=60, v_scale=0.6)
@@ -78,18 +82,21 @@ class ScreenScanner:
         template_mean = template.mean()
         template_img_norm = template.copy().astype(np.float32) - template_mean
 
+        debug_image = filtered_scan.copy()
+
         for xa,ya,wa,ha in interesting_area_coords:
             detect_area = np.sum(255-input_img[ya:ya+ha, xa:xa+wa])
             template_area = np.sum(255-template)
             
-            if detect_area > template_area*0.5 and detect_area < template_area*2 :# and wa<w and ha<h :
-
-                interesting_area = input_img[ya:ya+ha, xa:xa+wa]
+            if detect_area > template_area*0.5 and detect_area < template_area*2:
+                xs,ys,xe,ye = get_padded_coordinates(xa,ya,wa,ha, w, h, input_img.shape[1], input_img.shape[0])
+                interesting_area = input_img[ys:ye, xs:xe]
                 interesting_area_mean = interesting_area.mean()
                 interesting_area_norm = interesting_area - interesting_area_mean
 
                 # set fillvalue to 0 or interesting_area_norm.min()
-                res = scipy.signal.correlate2d(template_img_norm, interesting_area_norm, mode='same', fillvalue=0)
+                # the larger image should always be used as in1
+                res = scipy.signal.correlate2d(interesting_area_norm, template_img_norm, mode='same', fillvalue=0)
                 
                 # get index where overlap is maximum
                 corr_max_index = res.argmax()
@@ -99,31 +106,25 @@ class ScreenScanner:
                 if denom == 0:
                     continue
                 normalized_peak = res[sel_y, sel_x] / denom
-                percentage_match = (normalized_peak)*100
 
-                if plot == True:
-                    fig, (ax_orig, ax_template, ax_corr) = plt.subplots(3, 1, figsize=(6, 15))
-                    ax_orig.imshow(template, cmap='gray')
-                    ax_orig.set_title('Original')
-                    ax_orig.set_axis_off()
-                    ax_template.imshow(interesting_area, cmap='gray')
-                    ax_template.set_title('Template')
-                    ax_template.set_axis_off()
-                    ax_corr.imshow(res, cmap='gray')
-                    ax_corr.set_title(f'Cross-correlation ({percentage_match:.1f}%)')
-                    ax_corr.set_axis_off()
-                    ax_orig.plot(sel_x, sel_y, 'ro')
-                    fig.show()
-
-                ymin, ymax = max(0, sel_y-h//2)+ya, max(sel_y+h//2, h)+ya
-                xmin, xmax = max(0, sel_x-w//2)+xa, max(sel_x+w//2, w)+xa
+                # the coordinate of the max is the center of the template - to get the top left corner subtract the width and height of the template
+                ymin = max(0, sel_y-floor(h/2))+ys
+                xmin = max(0, sel_x-floor(w/2))+xs
                 match_result[ymin,xmin] = normalized_peak
 
         template_match_threshold = self.main_window.window_data.template_match_threshold
+        # get locations where the template matches more than the required percent
         (yCoords, xCoords) = np.where( (match_result > template_match_threshold) & (match_result <= 1) )
         self.template_match_status_text = f'Icon match: {np.max(match_result[match_result<=1])*100:.1f}%'
+        zipped = list(zip(xCoords, yCoords))
 
-        return list(zip(xCoords, yCoords)), w, h
+        if plot == True:
+            for x,y in zipped:
+                cv2.rectangle(debug_image, (x,y), (x+w,y+h), (0, 0, 255), 1)
+                debug_image[y:y+h,x:x+w] = debug_image[y:y+h,x:x+w]*0.5 + template*0.5
+            self.debug_image = debug_image
+
+        return zipped, w, h
 
     def find_charm_proc(self):
         text_color = self.main_window.ui.text_color_widget.color_hsv
@@ -143,14 +144,16 @@ class ScreenScanner:
                     self.sound_queue.append('procs_active_%d.mp3'%(len(self.affinity_proc_list)))
 
         ui_screenshot = self.screen_capture.get_screenshot()
+        screenshot_unix = self.screen_capture.screenshot_timestamp
+
         if ui_screenshot is None: 
+            self.exit_ = True
             print("Error: Cannot find Warframe window")
             return
         w, h, _ = ui_screenshot.shape
-        screenshot_unix = time.time()
 
         # get locations of template matches
-        locs, wt, ht = self.template_match(ui_screenshot)
+        locs, wt, ht = self.template_match(ui_screenshot, plot=False)
 
         stitched = None
         if len(locs) > 0:
@@ -226,64 +229,55 @@ class AffinityProc():
         return expiry_unix_s
 
 class ProcValidator():
-    def __init__(self, duration_scale, scanner:ScreenScanner) -> None:
+    def __init__(self, duration_multiplier, scanner:ScreenScanner) -> None:
         self.scanner = scanner
         self.proc_list = []
-        self.duration_scale = duration_scale
-        proc_dict = {'Affinity':120, 'Critical Chance':30, 'Energy Refund':10}
-        self.proc_durations = np.array([v for _,v in proc_dict.items()]) * duration_scale
-        self.proc_names = list(proc_dict)
-        self.last_proc_reference_timestamp_unix_s = 0
-        self.last_proc_unix_s = 0
+        self.duration_multiplier = duration_multiplier
+        self.proc_durations = np.array([v for _,v in constants.PROCNAME_DURATION.items()]) * duration_multiplier
+        self.min_time_restrictions = [self.proc_durations[0]-self.proc_durations[1], self.proc_durations[1]-self.proc_durations[2], 0]
+        self.proc_names = list(constants.PROCNAME_DURATION)
+        self.last_proc_start_unix_s = 0
     
     def process_detection(self, duration_remaining, screenshot_unix):
         expiry_timestamp_unix_s = screenshot_unix + duration_remaining
 
-        max_validations = 0
-        max_validations_index = 0
-        is_duplicate = False
-        last_validated_proc = None
-        for i in reversed(range(len(self.proc_list))):
-            proc:self.Proc = self.proc_list[i]
+        if len(self.proc_list) > 0:
+            diffs = [abs(expiry_timestamp_unix_s - proc.expiry_timestamp_unix_s) if abs(proc.validation_cycle-screenshot_unix) > 1e-5 else 100000 for proc in self.proc_list]
+            mindex = np.argmin(diffs)
+            if diffs[mindex] < 0.25: # this is a proc we already found
+                # set the validation cycle so that we don't validate the same proc more than once in the same screenshot
+                self.proc_list[mindex].validation_cycle = screenshot_unix
 
-            if proc.expiry_timestamp_unix_s < screenshot_unix:
-                del self.proc_list[i]
-                continue
-
-            if proc.is_duplicate(expiry_timestamp_unix_s):
-                if proc.validations > max_validations:
-                    max_validations = proc.validations
-                    max_validations_index = i
-                is_duplicate = True
-                break
-
-            if proc.validations >=2 and last_validated_proc is None:
-                last_validated_proc = proc
-
-        if last_validated_proc is not None:
-            self.last_proc_unix_s = last_validated_proc.start_timestamp_unix_s
-        
-        if max_validations >= 2:
-            self.last_proc_reference_timestamp_unix_s = self.proc_list[max_validations_index].start_timestamp_unix_s
-
-        # new proc
-        if not is_duplicate:
-            affinity_duration = self.scanner.main_window.window_data.affinity_proc_duration
-            diff = self.proc_durations - duration_remaining
-            non_negative_indices = np.where(diff >= 0)[0]
-            if len(non_negative_indices) == 0:
+                # proc is validated, do not need to add more validations
+                if self.proc_list[mindex].validated:
+                    return
+                
+                # proc that exists but is not validated
+                self.proc_list[mindex].add_validation()
+                if self.proc_list[mindex].validated:
+                    self.last_proc_start_unix_s = max(self.last_proc_start_unix_s, self.proc_list[mindex].start_timestamp_unix_s)
+                    # supress other procs within 26 seconds of this one - careful, this right part will remove the proc itself from the list 
+                    #self.proc_list = [self.proc_list[mindex]] + [e for e in self.proc_list if (abs(e.start_timestamp_unix_s - self.proc_list[mindex].start_timestamp_unix_s) > 26)]
+                    self.proc_list = [e for e in self.proc_list if ( (abs(e.start_timestamp_unix_s - self.proc_list[mindex].start_timestamp_unix_s) > 26) or (e is self.proc_list[mindex]))]
                 return
-            min_index = non_negative_indices[np.argmin(diff[non_negative_indices])]
 
-            valid_time_restriction = (screenshot_unix - self.last_proc_unix_s)>25
-            # extra restictions for adding a new affinity proc
-            if self.proc_names[min_index] == "Affinity":
-                valid_time_restriction = (duration_remaining > affinity_duration-25 and duration_remaining <= affinity_duration) 
-                if len(self.scanner.affinity_proc_list) > 0:
-                    valid_time_restriction = valid_time_restriction and duration_remaining > ( self.scanner.affinity_proc_list[-1].get_expiry_unix_s() - screenshot_unix + 25 )
+        # new proc - find the closest match
+        diff = self.proc_durations - duration_remaining
+        non_negative_indices = np.where(diff >= 0)[0]
+        if len(non_negative_indices) == 0:
+            return
+        min_index = non_negative_indices[np.argmin(diff[non_negative_indices])]
 
-            if valid_time_restriction:
-                self.proc_list.append(self.Proc(self.proc_names[min_index], self.proc_durations[min_index], duration_remaining, screenshot_unix, self.scanner))
+        valid_time_restriction = abs(screenshot_unix - self.last_proc_start_unix_s)>26 and duration_remaining > self.min_time_restrictions[min_index]
+
+        if valid_time_restriction:
+            self.proc_list.append(self.Proc(self.proc_names[min_index], self.proc_durations[min_index], duration_remaining, screenshot_unix, self.scanner))
+
+    def remove_expired_procs(self):
+        if len(self.proc_list) == 0:
+            return
+        cur_time = time.time()
+        self.proc_list = [e for e in self.proc_list if e.expiry_timestamp_unix_s > cur_time]
 
     class Proc():
         def __init__(self, name, base_duration, expiry_s, screenshot_unix, scanner:ScreenScanner) -> None:
@@ -292,29 +286,44 @@ class ProcValidator():
             self.expiry_s = expiry_s
             self.detection_timestamp_unix_s = screenshot_unix
             self.expiry_timestamp_unix_s = self.detection_timestamp_unix_s + expiry_s
-            self.start_timestamp_unix_s = self.detection_timestamp_unix_s - expiry_s
+            self.start_timestamp_unix_s = self.detection_timestamp_unix_s - (base_duration - expiry_s)
             self.validations = 1
             self.scanner = scanner
-            self.active = False
-            self.mission_start_timestamp_unix_s = self.scanner.main_window.monitor.log_parser.mission_start_timestamp_unix_s
+            self.validated = False
+            self.scan_start_timestamp_unix_s = max(self.scanner.main_window.monitor.log_parser.mission_start_timestamp_unix_s, self.scanner.main_window.monitor.scan_start_timestamp_unix_s)
+            self.validation_cycle = screenshot_unix
 
-        def is_duplicate(self, test_timestamp_unix_s):
-            if abs(test_timestamp_unix_s - self.expiry_timestamp_unix_s) < 0.1:
-                self.validations += 1
-                if self.validations >= 2 and not self.active:
-                    self.active = True
-                    data = {"name":self.name ,"proc_start_timestamp_unix_s":self.start_timestamp_unix_s, "mission_start_timestamp_unix_s": self.scanner.main_window.monitor.log_parser.mission_start_timestamp_unix_s, "proc_duration_s":self.base_duration,
-                            "detection_value":self.expiry_s, "detection_timestamp_unix_s": self.detection_timestamp_unix_s}
-                    pd.DataFrame([data]).to_csv(self.scanner.smeeta_history_file, mode='a', header=not os.path.isfile(self.scanner.smeeta_history_file), index=False)
+        def add_validation(self):
+            self.validations += 1
+            if self.validations >= 3 and not self.validated:
+                self.validated = True
+                data = {"name":self.name ,"proc_start_timestamp_unix_s":self.start_timestamp_unix_s, "scan_start_timestamp_unix_s": self.scan_start_timestamp_unix_s, "proc_duration_s":self.base_duration,
+                            "detection_value":self.expiry_s, "detection_timestamp_unix_s": self.detection_timestamp_unix_s, "proc_expiry_timestamp_unix_s":self.expiry_timestamp_unix_s}
+                pd.DataFrame([data]).to_csv(self.scanner.smeeta_history_file, mode='a', header=not os.path.isfile(self.scanner.smeeta_history_file), index=False)
 
-                    if self.name == "Affinity":
-                        affinity_duration = self.scanner.main_window.window_data.affinity_proc_duration
-                        self.scanner.affinity_proc_list.append( AffinityProc(self.start_timestamp_unix_s, affinity_duration) )
-                        self.scanner.sound_queue.append('procs_active_%d.mp3'%(len(self.scanner.affinity_proc_list)))
-                    
-                    self.scanner.main_window.charm_history.new_proc(self)
-                return True
-            return False
+                if self.name == "Affinity":
+                    affinity_duration = self.scanner.main_window.window_data.affinity_proc_duration
+                    self.scanner.affinity_proc_list.append( AffinityProc(self.start_timestamp_unix_s, affinity_duration) )
+                    self.scanner.sound_queue.append('procs_active_%d.mp3'%(len(self.scanner.affinity_proc_list)))
+                if self.scanner.main_window.window_data.play_all_proc_sounds:
+                    if self.name == "Energy Refund":
+                        self.scanner.sound_queue.append('energy_proc.mp3')
+                    elif self.name == "Critical Chance":
+                        self.scanner.sound_queue.append('critical_proc.mp3')
+
+                self.scanner.main_window.charm_history.new_proc(self)
+
+def get_padded_coordinates(x, y, w, h, w2, h2, xmax, ymax):
+    x1,y1,x2,y2 = x,y,x+w,y+h
+    if w < w2:
+        pad = (w2 - w)/2+1
+        x1 = max(0, x1-pad)
+        x2 = min(xmax, x2+pad)
+    if h < h2:
+        pad = (h2 - h)/2+1
+        y1 = max(0, y1-pad)
+        y2 = min(ymax, y2+pad)
+    return int(x1), int(y1), int(x2), int(y2)
 
 def get_bordered_image(img, x1,y1,x2,y2, border=10):
     yo,xo,_ = img.shape
@@ -377,3 +386,49 @@ def hls_filter(image, sens):
     HLS_high = np.array([255,255,255], dtype=np.uint8)
     inverted = cv2.bitwise_not(cv2.inRange(image, HLS_low, HLS_high))
     return inverted
+
+def concat_images(imga, imgb):
+    """
+    Combines two color image ndarrays side-by-side.
+    """
+    ha,wa = imga.shape[:2]
+    hb,wb = imgb.shape[:2]
+    max_height = np.max([ha, hb])
+    total_width = wa+wb
+    new_img = np.zeros(shape=(max_height, total_width))
+    new_img[:ha,:wa]=imga
+    new_img[:hb,wa:wa+wb]=imgb
+    return new_img
+
+def round_half_up(n):
+    if n % 0.5 == 0:
+        return n
+    return ceil(n * 2) / 2
+
+def round_half_down(n):
+    if n % 0.5 == 0:
+        return n
+    return floor(n * 2) / 2
+
+def downsample_icon(image_bgr, ui_scale):
+    scaled_image = cv2.resize(image_bgr, None, fx=ui_scale/round_half_down(ui_scale), fy=ui_scale/round_half_down(ui_scale))
+    _, thresh = cv2.threshold(scaled_image,127,255,cv2.THRESH_BINARY)
+    grs_thresh = thresh
+    if image_bgr.shape[2]>1:
+        grs_thresh = cv2.cvtColor(thresh, cv2.COLOR_BGR2GRAY)
+
+    contours = cv2.findContours(cv2.bitwise_not(grs_thresh), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours = contours[0] if len(contours) == 2 else contours[1]
+
+    # find the contour with the largest area
+    contour_list = []
+    area_list = []
+    for cntr in contours:
+        x,y,w,h = cv2.boundingRect(cntr)
+        contour_list.append((x,y,w,h))
+        area_list.append(w*h)
+
+    x,y,w,h = contour_list[np.argmax(area_list)]
+    cropped_image = thresh[y:y+h, x:x+w, 0]
+    return cropped_image
+    

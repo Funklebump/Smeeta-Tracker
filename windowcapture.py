@@ -1,6 +1,7 @@
 import numpy as np
 import win32gui, win32ui
 from ctypes import windll
+import time
 
 class WindowCapture:
     hwnd = None
@@ -13,6 +14,7 @@ class WindowCapture:
         self.window_name = window_name
         # find the handle for the window we want to capture
         self.cap_w, self.cap_h = capture_size
+        self.screenshot_timestamp = 0
         self.hwnd = None
         self.find_window()
 
@@ -24,9 +26,10 @@ class WindowCapture:
         return True
     
     def is_window(self):
-        if not self.hwnd or not win32gui.IsWindow(self.hwnd):
-            print(f'Window called "{self.window_name}" not found.')
-            return False
+        if self.hwnd is None or not win32gui.IsWindow(self.hwnd):
+            if not self.find_window():
+                print(f'Window called "{self.window_name}" not found.')
+                return False
         return True
 
     def get_screenshot(self):
@@ -60,7 +63,10 @@ class WindowCapture:
         dataBitMap = win32ui.CreateBitmap()
         dataBitMap.CreateCompatibleBitmap(dcObj, win_w, win_h)
         cDC.SelectObject(dataBitMap)
+        
+        t1=time.time()
         result = windll.user32.PrintWindow(self.hwnd, cDC.GetSafeHdc(), 2)
+        self.screenshot_timestamp = (time.time()+t1)/2
 
         bmpinfo = dataBitMap.GetInfo()
 
