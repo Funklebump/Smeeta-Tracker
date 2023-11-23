@@ -17,7 +17,7 @@ class EeLogParser:
     def __init__(self, main_window):
         self.window = main_window
         self.dirname = os.path.dirname(os.path.abspath(__file__))
-        self.ee_log_path = os.path.join(shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA, None, 0), 'Warframe\ee.log')
+        self.ee_log_path = os.path.join(shell.SHGetFolderPath(0, shellcon.CSIDL_LOCAL_APPDATA, None, 0), 'Xbox\ee.log')
 
         self.user_ExportRegions = None
         if os.path.isfile(os.path.join(self.dirname,"user_ExportRegions.json")):

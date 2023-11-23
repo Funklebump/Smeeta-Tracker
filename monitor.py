@@ -22,7 +22,7 @@ class Monitor():
 
     def start_scanning(self):
         if not self.screen_scanner.screen_capture.is_window():
-            self.parent_window.display_error(f'Cannot find a window named "Warframe".')
+            self.parent_window.display_error(f'Cannot find a window named "Xbox".')
             return 
         
         self.scan_start_timestamp_unix_s = time.time()

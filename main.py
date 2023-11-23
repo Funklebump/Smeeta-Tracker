@@ -64,7 +64,7 @@ class MainWindow(QWidget):
 
 
         user32 = ctypes.windll.user32
-        self.screen_capture:WindowCapture = WindowCapture('Warframe', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
+        self.screen_capture:WindowCapture = WindowCapture('Xboxe', ( user32.GetSystemMetrics(0) , user32.GetSystemMetrics(1) ), self.ui )
         self.overlay:Overlay = Overlay()
         self.overlay.show()
         self.window_data:WindowData = WindowData(self.ui)
@@ -350,7 +350,7 @@ class MainWindow(QWidget):
     
     def display_detection_area(self):
         if not self.monitor.screen_scanner.screen_capture.is_window():
-            self.display_error(f'Cannot find a window named "Warframe".')
+            self.display_error(f'Cannot find a window named "Xbox".')
             return
         img = self.monitor.screen_scanner.screen_capture.get_screenshot()
         self.paint = PaintPicture(self)
@@ -358,7 +358,7 @@ class MainWindow(QWidget):
 
     def display_icon_filter(self):
         if not self.monitor.screen_scanner.screen_capture.is_window():
-            self.display_error(f'Cannot find a window named "Warframe".')
+            self.display_error(f'Cannot find a window named "Xbox".')
             return
         img = self.monitor.screen_scanner.screen_capture.get_screenshot()
         filtered_scan = scanner.hsv_filter(img, self.ui.smeeta_icon_widget.color_hsv, h_sens=4, s_sens=60, v_scale=0.6)
@@ -367,7 +367,7 @@ class MainWindow(QWidget):
 
     def display_text_filter(self):
         if not self.monitor.screen_scanner.screen_capture.is_window():
-            self.display_error(f'Cannot find a window named "Warframe".')
+            self.display_error(f'Cannot find a window named "Xbox".')
             return
         img = self.monitor.screen_scanner.screen_capture.get_screenshot()
         filtered_scan = self.monitor.screen_scanner.text_hsv_filter(img, self.ui.text_color_widget.color_hsv)
@@ -584,7 +584,7 @@ class Overlay(QtWidgets.QDialog):
                 layout.addWidget(self.label_list[i])
 
         def add_text(self, text, color="white", bold=False):
-            if GetWindowText(GetForegroundWindow()) == 'Warframe':
+            if GetWindowText(GetForegroundWindow()) == 'Xbox':
                 if self.occupied_labels >= len(self.label_list):
                     self.reset_text()
                 self.label_list[self.occupied_labels].setText(text)
